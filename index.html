@@ -1,0 +1,1136 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Supabase Temperature Log Analytics</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#ecfdf5',
+                            100: '#d1fae5',
+                            500: '#10b981',
+                            600: '#059669',
+                            700: '#047857',
+                            900: '#064e3b',
+                        },
+                        darkbg: '#0b0f19',
+                        cardbg: '#111827',
+                        cardborder: '#1f2937'
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Supabase JS CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <style>
+        /* Custom scrollbars and styling */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+        .glow-emerald {
+            box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.25);
+        }
+        .glow-blue {
+            box-shadow: 0 0 25px -5px rgba(59, 130, 246, 0.25);
+        }
+    </style>
+</head>
+<body class="bg-darkbg text-slate-100 min-h-screen font-sans antialiased flex flex-col">
+
+    <!-- Header / Navigation -->
+    <header class="border-b border-gray-800 bg-cardbg/80 backdrop-blur sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-emerald-400">
+                    <i data-lucide="thermometer-snowflake" class="w-6 h-6"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg leading-tight flex items-center gap-2">
+                        TempPulse <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Supabase Live</span>
+                    </h1>
+                    <p class="text-xs text-slate-400 font-mono" id="supaUrlDisplay">zkkrdccwxwqipaykqmad.supabase.co</p>
+                </div>
+            </div>
+
+            <!-- Controls & Status -->
+            <div class="flex items-center space-x-3">
+                <!-- Status Badge -->
+                <div id="statusBadge" class="hidden sm:flex items-center space-x-2 px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-xs font-medium text-slate-300">
+                    <span id="statusPing" class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+                    <span id="statusDot" class="w-2 h-2 rounded-full bg-amber-400"></span>
+                    <span id="statusText">Connecting...</span>
+                </div>
+
+                <!-- Unit Toggle -->
+                <button id="unitToggleBtn" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-bold transition flex items-center gap-1">
+                    <span id="unitText">°C</span>
+                </button>
+
+                <!-- Refresh Button -->
+                <button id="refreshBtn" title="Fetch Latest Data" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition active:scale-95">
+                    <i data-lucide="refresh-cw" class="w-4 h-4" id="refreshIcon"></i>
+                </button>
+
+                <!-- Add Log Button -->
+                <button id="openAddModalBtn" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-lg transition flex items-center gap-1.5 shadow-lg shadow-emerald-900/30">
+                    <i data-lucide="plus" class="w-4 h-4"></i>
+                    <span class="hidden sm:inline">Add Log</span>
+                </button>
+
+                <!-- Settings Button -->
+                <button id="openSettingsModalBtn" title="Configure Database Connection" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 rounded-lg transition">
+                    <i data-lucide="settings" class="w-4 h-4"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+        <!-- Notification Toast Container -->
+        <div id="toastContainer" class="fixed top-20 right-4 z-50 space-y-2 max-w-md w-full pointer-events-none"></div>
+
+        <!-- Metric KPI Cards -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <!-- Current Temp Card -->
+            <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-5 glow-emerald relative overflow-hidden">
+                <div class="absolute -right-4 -bottom-4 opacity-5 text-emerald-400">
+                    <i data-lucide="thermometer" class="w-28 h-28"></i>
+                </div>
+                <div class="flex items-center justify-between text-slate-400 text-xs font-medium mb-1">
+                    <span>LATEST READING</span>
+                    <i data-lucide="activity" class="w-4 h-4 text-emerald-400"></i>
+                </div>
+                <div class="flex items-baseline space-x-2">
+                    <span class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white" id="statCurrent">--</span>
+                    <span class="text-sm text-slate-400 font-semibold" id="unitStatCurrent">°C</span>
+                </div>
+                <div class="mt-2 text-xs text-slate-400 flex items-center gap-1" id="statTimestamp">
+                    <i data-lucide="clock" class="w-3.5 h-3.5 text-slate-500"></i>
+                    <span>Awaiting data...</span>
+                </div>
+            </div>
+
+            <!-- Average Temp Card -->
+            <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-5 relative overflow-hidden">
+                <div class="flex items-center justify-between text-slate-400 text-xs font-medium mb-1">
+                    <span>AVERAGE TEMP</span>
+                    <i data-lucide="calculator" class="w-4 h-4 text-blue-400"></i>
+                </div>
+                <div class="flex items-baseline space-x-2">
+                    <span class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white" id="statAvg">--</span>
+                    <span class="text-sm text-slate-400 font-semibold" id="unitStatAvg">°C</span>
+                </div>
+                <div class="mt-2 text-xs text-slate-400 flex items-center justify-between">
+                    <span>Total Logs: <strong class="text-slate-200" id="statCount">0</strong></span>
+                </div>
+            </div>
+
+            <!-- Max Temp Card -->
+            <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-5 relative overflow-hidden">
+                <div class="flex items-center justify-between text-slate-400 text-xs font-medium mb-1">
+                    <span>MAX TEMPERATURE</span>
+                    <i data-lucide="trending-up" class="w-4 h-4 text-amber-400"></i>
+                </div>
+                <div class="flex items-baseline space-x-2">
+                    <span class="text-3xl sm:text-4xl font-extrabold tracking-tight text-amber-400" id="statMax">--</span>
+                    <span class="text-sm text-slate-400 font-semibold" id="unitStatMax">°C</span>
+                </div>
+                <div class="mt-2 text-xs text-slate-400 truncate" id="statMaxTime">
+                    Peak recorded
+                </div>
+            </div>
+
+            <!-- Min Temp Card -->
+            <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-5 relative overflow-hidden">
+                <div class="flex items-center justify-between text-slate-400 text-xs font-medium mb-1">
+                    <span>MIN TEMPERATURE</span>
+                    <i data-lucide="trending-down" class="w-4 h-4 text-cyan-400"></i>
+                </div>
+                <div class="flex items-baseline space-x-2">
+                    <span class="text-3xl sm:text-4xl font-extrabold tracking-tight text-cyan-400" id="statMin">--</span>
+                    <span class="text-sm text-slate-400 font-semibold" id="unitStatMin">°C</span>
+                </div>
+                <div class="mt-2 text-xs text-slate-400 truncate" id="statMinTime">
+                    Lowest recorded
+                </div>
+            </div>
+        </div>
+
+        <!-- Chart Section -->
+        <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-6 shadow-xl">
+            <!-- Chart Toolbar -->
+            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+                <div>
+                    <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                        <span>Temperature Dynamics</span>
+                        <span id="columnBadge" class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono border border-slate-700">column: temperature</span>
+                    </h2>
+                    <p class="text-xs text-slate-400">Real-time time-series telemetry visualization</p>
+                </div>
+
+                <div class="flex flex-wrap items-center gap-2">
+                    <!-- Range Selector -->
+                    <div class="inline-flex rounded-lg bg-slate-900 p-1 border border-slate-800 text-xs">
+                        <button data-range="1H" class="range-btn px-3 py-1 rounded-md transition text-slate-400 hover:text-white">1H</button>
+                        <button data-range="24H" class="range-btn px-3 py-1 rounded-md transition text-slate-400 hover:text-white">24H</button>
+                        <button data-range="7D" class="range-btn px-3 py-1 rounded-md transition text-slate-400 hover:text-white">7D</button>
+                        <button data-range="ALL" class="range-btn px-3 py-1 rounded-md transition text-white bg-emerald-600 font-medium">All</button>
+                    </div>
+
+                    <!-- Chart Type Selector -->
+                    <div class="inline-flex rounded-lg bg-slate-900 p-1 border border-slate-800 text-xs">
+                        <button id="btnChartLine" class="px-2.5 py-1 rounded-md bg-slate-800 text-emerald-400 font-medium transition" title="Line Chart">
+                            <i data-lucide="line-chart" class="w-4 h-4"></i>
+                        </button>
+                        <button id="btnChartBar" class="px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition" title="Bar Chart">
+                            <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+
+                    <!-- Seed Mock Data Button if Table Empty -->
+                    <button id="seedDataBtn" class="px-3 py-1 bg-indigo-600/20 border border-indigo-500/30 hover:bg-indigo-600/30 text-indigo-300 rounded-lg text-xs transition flex items-center gap-1.5">
+                        <i data-lucide="database" class="w-3.5 h-3.5"></i>
+                        <span>Generate Sample Data</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Canvas Container -->
+            <div class="relative w-full h-[320px] sm:h-[400px]">
+                <canvas id="tempChart"></canvas>
+                <!-- Loading Overlay -->
+                <div id="chartLoader" class="absolute inset-0 bg-cardbg/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-3 z-10 transition-opacity duration-300">
+                    <div class="w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
+                    <span class="text-xs text-slate-400 font-mono">Fetching telemetry logs...</span>
+                </div>
+                <!-- Empty Data State -->
+                <div id="emptyState" class="hidden absolute inset-0 bg-cardbg/95 flex flex-col items-center justify-center text-center p-6 space-y-3 z-10">
+                    <div class="p-3 bg-slate-800 rounded-full text-slate-400">
+                        <i data-lucide="database-zap" class="w-8 h-8"></i>
+                    </div>
+                    <h3 class="text-base font-semibold text-white">No Temperature Data Found</h3>
+                    <p class="text-xs text-slate-400 max-w-sm">The query executed successfully, but table <code class="text-emerald-400 font-mono">temp_logs</code> returned 0 rows or custom column names need matching.</p>
+                    <div class="flex gap-2 pt-2">
+                        <button id="emptySeedBtn" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-lg transition flex items-center gap-2">
+                            <i data-lucide="sparkles" class="w-4 h-4"></i>
+                            <span>Insert Sample Records</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Secondary Grid: Raw Logs Table & Live Realtime Ticker -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+            <!-- Raw Data Table (Span 2) -->
+            <div class="lg:col-span-2 bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-5 flex flex-col">
+                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <div>
+                        <h3 class="font-bold text-base text-white">Temperature Log Records</h3>
+                        <p class="text-xs text-slate-400">Recent entries stored in Supabase table</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="text" id="searchInput" placeholder="Search values or dates..." class="bg-slate-900 border border-slate-800 text-xs text-white rounded-lg px-3 py-1.5 focus:outline-none focus:border-emerald-500 w-full sm:w-48">
+                        <button id="exportCsvBtn" class="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg text-xs transition flex items-center gap-1" title="Export CSV">
+                            <i data-lucide="download" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Table View -->
+                <div class="overflow-x-auto flex-1 border border-slate-800/80 rounded-xl">
+                    <table class="w-full text-left text-xs">
+                        <thead class="bg-slate-900/80 text-slate-400 border-b border-slate-800 uppercase font-mono">
+                            <tr>
+                                <th class="py-2.5 px-3">ID</th>
+                                <th class="py-2.5 px-3">Timestamp</th>
+                                <th class="py-2.5 px-3 text-right">Temperature</th>
+                                <th class="py-2.5 px-3 text-center">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logsTableBody" class="divide-y divide-slate-800/60 font-mono">
+                            <tr>
+                                <td colspan="4" class="text-center py-8 text-slate-500">Loading log records...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Table Footer Pagination/Info -->
+                <div class="mt-3 flex items-center justify-between text-xs text-slate-400 px-1">
+                    <span id="tableCountInfo">Showing 0 logs</span>
+                    <span class="text-slate-500 text-[11px]">Sorted by timestamp descending</span>
+                </div>
+            </div>
+
+            <!-- Live Stream & Diagnostics (Span 1) -->
+            <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-5 flex flex-col space-y-4">
+                <div>
+                    <h3 class="font-bold text-base text-white flex items-center justify-between">
+                        <span>Realtime Stream</span>
+                        <span class="flex h-2 w-2 relative">
+                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                            <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </span>
+                    </h3>
+                    <p class="text-xs text-slate-400">Postgres changes listener feed</p>
+                </div>
+
+                <!-- Live Stream Feed Box -->
+                <div id="streamFeed" class="bg-slate-950 border border-slate-800 rounded-xl p-3 h-52 overflow-y-auto font-mono text-[11px] space-y-2 text-slate-300">
+                    <div class="text-slate-500 italic">Listening for database updates...</div>
+                </div>
+
+                <!-- Quick Schema Diagnostic Info -->
+                <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-3 space-y-2 text-xs">
+                    <div class="font-semibold text-slate-300 flex items-center gap-1.5">
+                        <i data-lucide="database" class="w-3.5 h-3.5 text-emerald-400"></i>
+                        <span>Supabase Connection Info</span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] font-mono text-slate-400">
+                        <div>Table: <span class="text-slate-200" id="diagTable">temp_logs</span></div>
+                        <div>Temp Col: <span class="text-slate-200" id="diagTempCol">temperature</span></div>
+                        <div>Time Col: <span class="text-slate-200" id="diagTimeCol">created_at</span></div>
+                        <div>Role: <span class="text-emerald-400">service_role</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Modal: Add Log Record -->
+    <div id="addModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-cardbg border border-cardborder rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
+            <button id="closeAddModalBtn" class="absolute top-4 right-4 text-slate-400 hover:text-white">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+            
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
+                    <i data-lucide="plus-circle" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-lg text-white">Add Temperature Log</h3>
+                    <p class="text-xs text-slate-400">Push a new measurement record to Supabase</p>
+                </div>
+            </div>
+
+            <form id="addLogForm" class="space-y-4 pt-2">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Temperature (°C)</label>
+                    <input type="number" step="0.1" id="inputTempValue" required placeholder="e.g. 23.5" class="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Timestamp</label>
+                    <input type="datetime-local" id="inputTimestamp" class="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500">
+                    <p class="text-[11px] text-slate-500 mt-1">Leave empty to use current database timestamp.</p>
+                </div>
+
+                <div class="flex justify-end gap-2 pt-2">
+                    <button type="button" id="cancelAddBtn" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition">Cancel</button>
+                    <button type="submit" id="submitLogBtn" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg text-xs transition flex items-center gap-1">
+                        <i data-lucide="send" class="w-3.5 h-3.5"></i>
+                        <span>Submit Log</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal: Settings / Credentials Config -->
+    <div id="settingsModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-cardbg border border-cardborder rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl relative">
+            <button id="closeSettingsModalBtn" class="absolute top-4 right-4 text-slate-400 hover:text-white">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+            
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-blue-500/10 text-blue-400 rounded-xl border border-blue-500/20">
+                    <i data-lucide="sliders" class="w-5 h-5"></i>
+                </div>
+                <div>
+                    <h3 class="font-bold text-lg text-white">Database & Column Settings</h3>
+                    <p class="text-xs text-slate-400">Configure Supabase endpoint and table mapping</p>
+                </div>
+            </div>
+
+            <form id="settingsForm" class="space-y-3 pt-2">
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">Supabase URL</label>
+                    <input type="text" id="cfgUrl" required class="w-full bg-slate-900 border border-slate-700 text-white font-mono text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-slate-300 mb-1">API Key (Service Role / Anon Key)</label>
+                    <input type="password" id="cfgKey" required class="w-full bg-slate-900 border border-slate-700 text-white font-mono text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500">
+                </div>
+
+                <div class="grid grid-cols-3 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Table Name</label>
+                        <input type="text" id="cfgTable" required class="w-full bg-slate-900 border border-slate-700 text-white font-mono text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Temp Column</label>
+                        <input type="text" id="cfgTempCol" required class="w-full bg-slate-900 border border-slate-700 text-white font-mono text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-slate-300 mb-1">Time Column</label>
+                        <input type="text" id="cfgTimeCol" required class="w-full bg-slate-900 border border-slate-700 text-white font-mono text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500">
+                    </div>
+                </div>
+
+                <div class="flex justify-between items-center pt-3 border-t border-slate-800">
+                    <button type="button" id="resetConfigBtn" class="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1">
+                        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Reset Defaults
+                    </button>
+                    <div class="flex gap-2">
+                        <button type="button" id="cancelSettingsBtn" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition">Cancel</button>
+                        <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg text-xs transition">Save & Reconnect</button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // Default Configuration prefilled with provided credentials
+        const DEFAULT_CONFIG = {
+            url: 'https://zkkrdccwxwqipaykqmad.supabase.co',
+            key: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inpra3JkY2N3eHdxaXBheWtxbWFkIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc4NjEwNTM1NiwiZXhwIjoyMTAxNjgxMzU2fQ.MPJPeyCZBZWv6Pcu3cnNt7MdoV8R26o0sD0MwHlvwGA',
+            tableName: 'temp_logs',
+            tempColumn: 'temperature',
+            timeColumn: 'created_at'
+        };
+
+        // Application State
+        let config = { ...DEFAULT_CONFIG };
+        let supabaseClient = null;
+        let realtimeSubscription = null;
+        let rawLogsData = [];
+        let filteredLogsData = [];
+        let temperatureChart = null;
+        let currentUnit = 'C'; // 'C' or 'F'
+        let currentTimeRange = 'ALL'; // '1H', '24H', '7D', 'ALL'
+        let currentChartType = 'line'; // 'line' or 'bar'
+
+        // Initialize Lucide icons
+        lucide.createIcons();
+
+        function initChart() {
+            const ctx = document.getElementById('tempChart').getContext('2d');
+            
+            // Create gradient
+            const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+            gradient.addColorStop(0, 'rgba(16, 185, 129, 0.35)');
+            gradient.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
+
+            temperatureChart = new Chart(ctx, {
+                type: currentChartType,
+                data: {
+                    labels: [],
+                    datasets: [{
+                        label: 'Temperature',
+                        data: [],
+                        borderColor: '#10b981',
+                        borderWidth: 2,
+                        backgroundColor: gradient,
+                        fill: true,
+                        tension: 0.35,
+                        pointBackgroundColor: '#10b981',
+                        pointBorderColor: '#0f172a',
+                        pointBorderWidth: 2,
+                        pointRadius: 4,
+                        pointHoverRadius: 6
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false,
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#1e293b',
+                            titleColor: '#94a3b8',
+                            bodyColor: '#38bdf8',
+                            borderColor: '#334155',
+                            borderWidth: 1,
+                            padding: 10,
+                            displayColors: false,
+                            callbacks: {
+                                label: function(context) {
+                                    return `Temp: ${context.parsed.y.toFixed(1)}°${currentUnit}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            ticks: {
+                                color: '#94a3b8',
+                                font: { size: 10, family: 'monospace' },
+                                maxRotation: 0
+                            }
+                        },
+                        y: {
+                            grid: { color: 'rgba(255, 255, 255, 0.08)' },
+                            ticks: {
+                                color: '#94a3b8',
+                                font: { size: 10, family: 'monospace' },
+                                callback: function(value) {
+                                    return value + '°' + currentUnit;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function initSupabase() {
+            try {
+                // Read from localStorage if saved earlier
+                const savedConfig = localStorage.getItem('supa_temp_cfg');
+                if (savedConfig) {
+                    try { config = JSON.parse(savedConfig); } catch(e){}
+                }
+
+                updateUIConfigText();
+
+                // Create Supabase client
+                const { createClient } = window.supabase;
+                supabaseClient = createClient(config.url, config.key, {
+                    auth: { persistSession: false }
+                });
+
+                updateStatus('connecting', 'Connecting to Supabase...');
+                setupRealtimeSubscription();
+                fetchLogs();
+            } catch (err) {
+                console.error('Supabase init error:', err);
+                updateStatus('error', 'Init failed');
+                showToast('Failed to initialize Supabase client: ' + err.message, 'error');
+            }
+        }
+
+        function updateUIConfigText() {
+            document.getElementById('supaUrlDisplay').innerText = config.url.replace(/^https?:\/\//, '');
+            document.getElementById('columnBadge').innerText = `table: ${config.tableName} | temp: ${config.tempColumn}`;
+            document.getElementById('diagTable').innerText = config.tableName;
+            document.getElementById('diagTempCol').innerText = config.tempColumn;
+            document.getElementById('diagTimeCol').innerText = config.timeColumn;
+
+            document.getElementById('cfgUrl').value = config.url;
+            document.getElementById('cfgKey').value = config.key;
+            document.getElementById('cfgTable').value = config.tableName;
+            document.getElementById('cfgTempCol').value = config.tempColumn;
+            document.getElementById('cfgTimeCol').value = config.timeColumn;
+        }
+
+        async function fetchLogs() {
+            showChartLoader(true);
+            setRefreshSpinning(true);
+
+            try {
+                // Fetch data from table ordered by time column ascending
+                const { data, error } = await supabaseClient
+                    .from(config.tableName)
+                    .select('*')
+                    .order(config.timeColumn, { ascending: true })
+                    .limit(500);
+
+                if (error) {
+                    // Try auto-detecting column names if configured column is missing
+                    if (error.message && error.message.includes("column")) {
+                        showToast(`Query error: ${error.message}. Check Settings for column names.`, 'error');
+                    } else {
+                        showToast(`Supabase Error: ${error.message}`, 'error');
+                    }
+                    updateStatus('error', 'Database Error');
+                    rawLogsData = [];
+                } else {
+                    rawLogsData = data || [];
+                    
+                    // Auto-detect columns if rawLogsData has items but schema differs
+                    if (rawLogsData.length > 0) {
+                        detectAndAdaptColumns(rawLogsData[0]);
+                    }
+
+                    updateStatus('online', `Connected (${rawLogsData.length} records)`);
+                    logStreamMessage(`Fetched ${rawLogsData.length} entries from ${config.tableName}`);
+                }
+
+                processAndUpdateDashboard();
+
+            } catch (err) {
+                console.error('Fetch exception:', err);
+                showToast(`Network error: ${err.message}`, 'error');
+                updateStatus('error', 'Connection Error');
+            } finally {
+                showChartLoader(false);
+                setRefreshSpinning(false);
+            }
+        }
+
+        function detectAndAdaptColumns(sampleRecord) {
+            const keys = Object.keys(sampleRecord);
+            
+            // Check if user's configured tempColumn exists
+            if (sampleRecord[config.tempColumn] === undefined) {
+                // Search for potential candidate keys
+                const tempCandidate = keys.find(k => 
+                    /temp|val|deg|celsius|reading|number/i.test(k) || typeof sampleRecord[k] === 'number'
+                );
+                if (tempCandidate) {
+                    config.tempColumn = tempCandidate;
+                    showToast(`Auto-detected temperature column: "${tempCandidate}"`, 'info');
+                }
+            }
+
+            // Check time column
+            if (sampleRecord[config.timeColumn] === undefined) {
+                const timeCandidate = keys.find(k => 
+                    /created|time|date|at|stamp/i.test(k)
+                );
+                if (timeCandidate) {
+                    config.timeColumn = timeCandidate;
+                    showToast(`Auto-detected timestamp column: "${timeCandidate}"`, 'info');
+                }
+            }
+
+            updateUIConfigText();
+        }
+
+        function setupRealtimeSubscription() {
+            if (realtimeSubscription) {
+                supabaseClient.removeChannel(realtimeSubscription);
+            }
+
+            try {
+                realtimeSubscription = supabaseClient
+                    .channel('temp_logs_channel')
+                    .on(
+                        'postgres_changes',
+                        { event: 'INSERT', schema: 'public', table: config.tableName },
+                        (payload) => {
+                            logStreamMessage(`⚡ NEW RECORD: ${JSON.stringify(payload.new)}`);
+                            showToast(`New temperature reading: ${payload.new[config.tempColumn]}°C`, 'success');
+                            
+                            rawLogsData.push(payload.new);
+                            processAndUpdateDashboard();
+                        }
+                    )
+                    .subscribe((status) => {
+                        if (status === 'SUBSCRIBED') {
+                            logStreamMessage(`Realtime channel subscribed to table [${config.tableName}]`);
+                        }
+                    });
+            } catch (e) {
+                console.warn('Realtime subscription failed:', e);
+            }
+        }
+
+        function processAndUpdateDashboard() {
+            // Apply Time Range Filter
+            filteredLogsData = filterDataByTimeRange(rawLogsData, currentTimeRange);
+
+            const emptyStateEl = document.getElementById('emptyState');
+            if (!filteredLogsData || filteredLogsData.length === 0) {
+                emptyStateEl.classList.remove('hidden');
+                resetKPICards();
+                renderTable([]);
+                updateChart([], []);
+                return;
+            } else {
+                emptyStateEl.classList.add('hidden');
+            }
+
+            // Extract numeric values & calculate stats
+            const tempsC = filteredLogsData.map(d => Number(d[config.tempColumn]) || 0);
+            const tempsConverted = tempsC.map(val => convertTemp(val));
+            
+            const currentVal = tempsConverted[tempsConverted.length - 1];
+            const maxVal = Math.max(...tempsConverted);
+            const minVal = Math.min(...tempsConverted);
+            const sumVal = tempsConverted.reduce((a, b) => a + b, 0);
+            const avgVal = sumVal / tempsConverted.length;
+
+            const maxIndex = tempsConverted.indexOf(maxVal);
+            const minIndex = tempsConverted.indexOf(minVal);
+
+            // Update Metric Cards
+            document.getElementById('statCurrent').innerText = currentVal.toFixed(1);
+            document.getElementById('statAvg').innerText = avgVal.toFixed(1);
+            document.getElementById('statMax').innerText = maxVal.toFixed(1);
+            document.getElementById('statMin').innerText = minVal.toFixed(1);
+            document.getElementById('statCount').innerText = filteredLogsData.length;
+
+            // Timestamp formatting
+            const lastRecord = filteredLogsData[filteredLogsData.length - 1];
+            const lastTimeStr = formatTime(lastRecord[config.timeColumn]);
+            document.getElementById('statTimestamp').innerHTML = `<i data-lucide="clock" class="w-3.5 h-3.5 text-emerald-400"></i> Updated ${lastTimeStr}`;
+            
+            if (maxIndex >= 0) {
+                document.getElementById('statMaxTime').innerText = `At ${formatTime(filteredLogsData[maxIndex][config.timeColumn])}`;
+            }
+            if (minIndex >= 0) {
+                document.getElementById('statMinTime').innerText = `At ${formatTime(filteredLogsData[minIndex][config.timeColumn])}`;
+            }
+
+            // Update Labels & Chart
+            const labels = filteredLogsData.map(d => formatChartLabel(d[config.timeColumn]));
+            updateChart(labels, tempsConverted);
+
+            // Update Table
+            renderTable(filteredLogsData);
+
+            lucide.createIcons();
+        }
+
+        function filterDataByTimeRange(data, range) {
+            if (range === 'ALL' || !data || data.length === 0) return data;
+            
+            const now = new Date().getTime();
+            let cutoffMs = 0;
+
+            if (range === '1H') cutoffMs = 60 * 60 * 1000;
+            else if (range === '24H') cutoffMs = 24 * 60 * 60 * 1000;
+            else if (range === '7D') cutoffMs = 7 * 24 * 60 * 60 * 1000;
+
+            return data.filter(item => {
+                const itemTime = new Date(item[config.timeColumn]).getTime();
+                return (now - itemTime) <= cutoffMs;
+            });
+        }
+
+        function updateChart(labels, values) {
+            if (!temperatureChart) return;
+
+            temperatureChart.config.type = currentChartType;
+            temperatureChart.data.labels = labels;
+            temperatureChart.data.datasets[0].data = values;
+            temperatureChart.data.datasets[0].label = `Temperature (°${currentUnit})`;
+
+            // Color coding based on trends
+            const ctx = temperatureChart.ctx;
+            const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+            if (currentUnit === 'C' && values[values.length - 1] > 28) {
+                gradient.addColorStop(0, 'rgba(245, 158, 11, 0.4)');
+                gradient.addColorStop(1, 'rgba(245, 158, 11, 0.0)');
+                temperatureChart.data.datasets[0].borderColor = '#f59e0b';
+            } else {
+                gradient.addColorStop(0, 'rgba(16, 185, 129, 0.35)');
+                gradient.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
+                temperatureChart.data.datasets[0].borderColor = '#10b981';
+            }
+            temperatureChart.data.datasets[0].backgroundColor = gradient;
+
+            temperatureChart.update();
+        }
+
+        function renderTable(dataList) {
+            const tbody = document.getElementById('logsTableBody');
+            const searchVal = document.getElementById('searchInput').value.toLowerCase().trim();
+
+            let rows = [...dataList].reverse(); // Most recent first for table view
+
+            if (searchVal) {
+                rows = rows.filter(r => {
+                    const temp = String(r[config.tempColumn] || '');
+                    const time = String(r[config.timeColumn] || '');
+                    const id = String(r.id || '');
+                    return temp.includes(searchVal) || time.toLowerCase().includes(searchVal) || id.includes(searchVal);
+                });
+            }
+
+            document.getElementById('tableCountInfo').innerText = `Showing ${rows.length} of ${dataList.length} records`;
+
+            if (rows.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-6 text-slate-500">No matching log records found</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = rows.map(item => {
+                const idVal = item.id !== undefined ? item.id : '-';
+                const rawTemp = Number(item[config.tempColumn]) || 0;
+                const converted = convertTemp(rawTemp).toFixed(1);
+                const dateStr = formatTime(item[config.timeColumn]);
+                
+                // Status badge
+                let statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Normal</span>';
+                if (rawTemp > 30) {
+                    statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20">High</span>';
+                } else if (rawTemp < 15) {
+                    statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">Cool</span>';
+                }
+
+                return `
+                    <tr class="hover:bg-slate-900/50 transition-colors">
+                        <td class="py-2.5 px-3 text-slate-400 font-mono text-[11px]">${idVal}</td>
+                        <td class="py-2.5 px-3 text-slate-300">${dateStr}</td>
+                        <td class="py-2.5 px-3 text-right font-bold text-white">${converted}°${currentUnit}</td>
+                        <td class="py-2.5 px-3 text-center">${statusBadge}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function convertTemp(celsius) {
+            return currentUnit === 'F' ? (celsius * 9/5) + 32 : celsius;
+        }
+
+        function formatTime(isoString) {
+            if (!isoString) return 'N/A';
+            const d = new Date(isoString);
+            if (isNaN(d.getTime())) return String(isoString);
+            return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        }
+
+        function formatChartLabel(isoString) {
+            if (!isoString) return '';
+            const d = new Date(isoString);
+            if (isNaN(d.getTime())) return '';
+            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        }
+
+        function resetKPICards() {
+            document.getElementById('statCurrent').innerText = '--';
+            document.getElementById('statAvg').innerText = '--';
+            document.getElementById('statMax').innerText = '--';
+            document.getElementById('statMin').innerText = '--';
+            document.getElementById('statCount').innerText = '0';
+            document.getElementById('statTimestamp').innerText = 'No records';
+        }
+
+        function updateStatus(state, text) {
+            const statusDot = document.getElementById('statusDot');
+            const statusPing = document.getElementById('statusPing');
+            const statusText = document.getElementById('statusText');
+
+            statusText.innerText = text;
+
+            if (state === 'online') {
+                statusDot.className = 'w-2 h-2 rounded-full bg-emerald-400';
+                statusPing.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-ping';
+            } else if (state === 'error') {
+                statusDot.className = 'w-2 h-2 rounded-full bg-red-500';
+                statusPing.className = 'hidden';
+            } else {
+                statusDot.className = 'w-2 h-2 rounded-full bg-amber-400';
+                statusPing.className = 'w-2 h-2 rounded-full bg-amber-400 animate-ping';
+            }
+        }
+
+        function showChartLoader(show) {
+            const loader = document.getElementById('chartLoader');
+            if (show) {
+                loader.classList.remove('opacity-0', 'pointer-events-none');
+            } else {
+                loader.classList.add('opacity-0', 'pointer-events-none');
+            }
+        }
+
+        function setRefreshSpinning(spinning) {
+            const icon = document.getElementById('refreshIcon');
+            if (spinning) icon.classList.add('animate-spin');
+            else icon.classList.remove('animate-spin');
+        }
+
+        function logStreamMessage(msg) {
+            const feed = document.getElementById('streamFeed');
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.className = 'border-b border-slate-900 pb-1 text-slate-300';
+            entry.innerHTML = `<span class="text-slate-500">[${time}]</span> ${msg}`;
+            feed.prepend(entry);
+        }
+
+        function showToast(message, type = 'info') {
+            const toastContainer = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            
+            let bgClass = 'bg-slate-800 border-slate-700 text-slate-200';
+            let icon = 'info';
+
+            if (type === 'success') {
+                bgClass = 'bg-emerald-950 border-emerald-800 text-emerald-200';
+                icon = 'check-circle-2';
+            } else if (type === 'error') {
+                bgClass = 'bg-red-950 border-red-800 text-red-200';
+                icon = 'alert-triangle';
+            }
+
+            toast.className = `pointer-events-auto flex items-center justify-between p-3.5 rounded-xl border ${bgClass} shadow-xl text-xs transition-all duration-300 transform translate-y-2 opacity-0`;
+            toast.innerHTML = `
+                <div class="flex items-center space-x-2">
+                    <i data-lucide="${icon}" class="w-4 h-4 shrink-0"></i>
+                    <span>${message}</span>
+                </div>
+            `;
+
+            toastContainer.appendChild(toast);
+            lucide.createIcons();
+
+            setTimeout(() => {
+                toast.classList.remove('translate-y-2', 'opacity-0');
+            }, 10);
+
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'translate-y-2');
+                setTimeout(() => toast.remove(), 300);
+            }, 4000);
+        }
+
+        async function handleAddLogSubmit(e) {
+            e.preventDefault();
+            const valInput = document.getElementById('inputTempValue');
+            const timeInput = document.getElementById('inputTimestamp');
+            const submitBtn = document.getElementById('submitLogBtn');
+
+            const numVal = parseFloat(valInput.value);
+            if (isNaN(numVal)) {
+                showToast('Please enter a valid numeric temperature value.', 'error');
+                return;
+            }
+
+            const payload = {};
+            payload[config.tempColumn] = numVal;
+
+            if (timeInput.value) {
+                payload[config.timeColumn] = new Date(timeInput.value).toISOString();
+            } else {
+                payload[config.timeColumn] = new Date().toISOString();
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = `<div class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Sending...`;
+
+            try {
+                const { data, error } = await supabaseClient
+                    .from(config.tableName)
+                    .insert([payload])
+                    .select();
+
+                if (error) {
+                    showToast(`Insert failed: ${error.message}`, 'error');
+                } else {
+                    showToast(`Temperature log recorded successfully!`, 'success');
+                    document.getElementById('addModal').classList.add('hidden');
+                    valInput.value = '';
+                    timeInput.value = '';
+                    fetchLogs();
+                }
+            } catch (err) {
+                showToast(`Error inserting record: ${err.message}`, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = `<i data-lucide="send" class="w-3.5 h-3.5"></i> Submit Log`;
+                lucide.createIcons();
+            }
+        }
+
+        async function seedSampleData() {
+            if (!confirm('This will insert 12 simulated temperature readings into table "' + config.tableName + '". Proceed?')) return;
+
+            showChartLoader(true);
+            const now = new Date();
+            const mockRecords = [];
+            let baseTemp = 21.5;
+
+            for (let i = 12; i >= 0; i--) {
+                const timestamp = new Date(now.getTime() - i * 30 * 60 * 1000); // Every 30 mins
+                baseTemp += (Math.random() - 0.45) * 1.5; // Natural temperature fluctuation
+                
+                const record = {};
+                record[config.tempColumn] = parseFloat(baseTemp.toFixed(1));
+                record[config.timeColumn] = timestamp.toISOString();
+                mockRecords.push(record);
+            }
+
+            try {
+                const { error } = await supabaseClient
+                    .from(config.tableName)
+                    .insert(mockRecords);
+
+                if (error) {
+                    showToast(`Failed to seed data: ${error.message}. Verify table exists in Supabase.`, 'error');
+                } else {
+                    showToast(`Successfully inserted 13 sample records!`, 'success');
+                    fetchLogs();
+                }
+            } catch (err) {
+                showToast(`Error seeding sample data: ${err.message}`, 'error');
+            } finally {
+                showChartLoader(false);
+            }
+        }
+
+        function exportCSV() {
+            if (!filteredLogsData || filteredLogsData.length === 0) {
+                showToast('No logs available to export.', 'info');
+                return;
+            }
+
+            const headers = ['ID', 'Timestamp', `Temperature_Deg_${currentUnit}`];
+            const csvRows = [headers.join(',')];
+
+            filteredLogsData.forEach(row => {
+                const id = row.id !== undefined ? row.id : '';
+                const time = row[config.timeColumn] || '';
+                const temp = convertTemp(Number(row[config.tempColumn]) || 0).toFixed(2);
+                csvRows.push(`"${id}","${time}",${temp}`);
+            });
+
+            const csvContent = 'data:text/csv;charset=utf-8,' + csvRows.join('\n');
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement('a');
+            link.setAttribute('href', encodedUri);
+            link.setAttribute('download', `temperature_logs_${new Date().toISOString().slice(0,10)}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+
+            showToast('CSV Export downloaded.', 'success');
+        }
+
+        function bindEvents() {
+            // Unit Toggle
+            document.getElementById('unitToggleBtn').addEventListener('click', () => {
+                currentUnit = currentUnit === 'C' ? 'F' : 'C';
+                document.getElementById('unitText').innerText = `°${currentUnit}`;
+                document.querySelectorAll('#unitStatCurrent, #unitStatAvg, #unitStatMax, #unitStatMin').forEach(el => el.innerText = `°${currentUnit}`);
+                processAndUpdateDashboard();
+            });
+
+            // Manual Refresh
+            document.getElementById('refreshBtn').addEventListener('click', () => fetchLogs());
+
+            // Add Modal Trigger
+            document.getElementById('openAddModalBtn').addEventListener('click', () => {
+                document.getElementById('addModal').classList.remove('hidden');
+            });
+            document.getElementById('closeAddModalBtn').addEventListener('click', () => {
+                document.getElementById('addModal').classList.add('hidden');
+            });
+            document.getElementById('cancelAddBtn').addEventListener('click', () => {
+                document.getElementById('addModal').classList.add('hidden');
+            });
+            document.getElementById('addLogForm').addEventListener('submit', handleAddLogSubmit);
+
+            // Settings Modal Trigger
+            document.getElementById('openSettingsModalBtn').addEventListener('click', () => {
+                document.getElementById('settingsModal').classList.remove('hidden');
+            });
+            document.getElementById('closeSettingsModalBtn').addEventListener('click', () => {
+                document.getElementById('settingsModal').classList.add('hidden');
+            });
+            document.getElementById('cancelSettingsBtn').addEventListener('click', () => {
+                document.getElementById('settingsModal').classList.add('hidden');
+            });
+
+            // Save Settings
+            document.getElementById('settingsForm').addEventListener('submit', (e) => {
+                e.preventDefault();
+                config.url = document.getElementById('cfgUrl').value.trim();
+                config.key = document.getElementById('cfgKey').value.trim();
+                config.tableName = document.getElementById('cfgTable').value.trim();
+                config.tempColumn = document.getElementById('cfgTempCol').value.trim();
+                config.timeColumn = document.getElementById('cfgTimeCol').value.trim();
+
+                localStorage.setItem('supa_temp_cfg', JSON.stringify(config));
+                document.getElementById('settingsModal').classList.add('hidden');
+                showToast('Settings saved. Reconnecting...', 'success');
+                initSupabase();
+            });
+
+            // Reset Default Settings
+            document.getElementById('resetConfigBtn').addEventListener('click', () => {
+                config = { ...DEFAULT_CONFIG };
+                localStorage.removeItem('supa_temp_cfg');
+                updateUIConfigText();
+                showToast('Reset to default credentials', 'info');
+            });
+
+            // Chart Range Buttons
+            document.querySelectorAll('.range-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    document.querySelectorAll('.range-btn').forEach(b => {
+                        b.classList.remove('bg-emerald-600', 'text-white', 'font-medium');
+                        b.classList.add('text-slate-400');
+                    });
+                    e.target.classList.add('bg-emerald-600', 'text-white', 'font-medium');
+                    e.target.classList.remove('text-slate-400');
+                    
+                    currentTimeRange = e.target.getAttribute('data-range');
+                    processAndUpdateDashboard();
+                });
+            });
+
+            // Chart Type Buttons
+            document.getElementById('btnChartLine').addEventListener('click', () => {
+                currentChartType = 'line';
+                document.getElementById('btnChartLine').classList.add('bg-slate-800', 'text-emerald-400');
+                document.getElementById('btnChartBar').classList.remove('bg-slate-800', 'text-emerald-400');
+                processAndUpdateDashboard();
+            });
+            document.getElementById('btnChartBar').addEventListener('click', () => {
+                currentChartType = 'bar';
+                document.getElementById('btnChartBar').classList.add('bg-slate-800', 'text-emerald-400');
+                document.getElementById('btnChartLine').classList.remove('bg-slate-800', 'text-emerald-400');
+                processAndUpdateDashboard();
+            });
+
+            // Seed Mock Data
+            document.getElementById('seedDataBtn').addEventListener('click', seedSampleData);
+            document.getElementById('emptySeedBtn').addEventListener('click', seedSampleData);
+
+            // Table Search Input
+            document.getElementById('searchInput').addEventListener('input', () => renderTable(filteredLogsData));
+
+            // Export CSV Button
+            document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
+        }
+
+        window.onload = function() {
+            initChart();
+            bindEvents();
+            initSupabase();
+        };
+    </script>
+</body>
+</html>
