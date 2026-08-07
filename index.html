@@ -197,6 +197,17 @@
                 </div>
 
                 <div class="flex flex-wrap items-center gap-2">
+                    <!-- Scale Range Controls -->
+                    <div class="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 p-1 border border-slate-800 text-xs">
+                        <button id="btnAutoScale" class="px-2.5 py-1 rounded-md transition text-slate-400 hover:text-white" title="Toggle Auto Scale Y-Axis">Auto</button>
+                        <div id="manualScaleControls" class="flex items-center gap-1 px-1">
+                            <input type="number" id="inputScaleMin" value="10" step="1" class="w-12 bg-slate-800 border border-slate-700 text-white rounded text-center text-xs py-0.5 focus:outline-none focus:border-emerald-500 font-mono" title="Min Scale Bound">
+                            <span class="text-slate-500 text-[10px]">to</span>
+                            <input type="number" id="inputScaleMax" value="35" step="1" class="w-12 bg-slate-800 border border-slate-700 text-white rounded text-center text-xs py-0.5 focus:outline-none focus:border-emerald-500 font-mono" title="Max Scale Bound">
+                            <span class="text-slate-400 text-[11px] font-semibold pl-0.5" id="scaleUnitLabel">°C</span>
+                        </div>
+                    </div>
+
                     <!-- Range Selector -->
                     <div class="inline-flex rounded-lg bg-slate-900 p-1 border border-slate-800 text-xs">
                         <button data-range="1H" class="range-btn px-3 py-1 rounded-md transition text-slate-400 hover:text-white">1H</button>
@@ -296,18 +307,18 @@
             <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-5 flex flex-col space-y-4">
                 <div>
                     <h3 class="font-bold text-base text-white flex items-center justify-between">
-                        <span>Realtime Stream</span>
-                        <span class="flex h-2 w-2 relative">
+                        <span id="streamTitle">Realtime Stream</span>
+                        <span id="streamIndicator" class="flex h-2 w-2 relative">
                             <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                             <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
                         </span>
                     </h3>
-                    <p class="text-xs text-slate-400">Postgres changes listener feed</p>
+                    <p class="text-xs text-slate-400" id="streamSubtext">Postgres changes listener feed</p>
                 </div>
 
                 <!-- Live Stream Feed Box -->
                 <div id="streamFeed" class="bg-slate-950 border border-slate-800 rounded-xl p-3 h-52 overflow-y-auto font-mono text-[11px] space-y-2 text-slate-300">
-                    <div class="text-slate-500 italic">Listening for database updates...</div>
+                    <div class="text-slate-500 italic">Initializing connection feed...</div>
                 </div>
 
                 <!-- Quick Schema Diagnostic Info -->
@@ -424,6 +435,14 @@
     </div>
 
     <script>
+        // Catch sandbox WebSocket SecurityErrors globally to prevent app execution interruption
+        window.addEventListener('error', function(event) {
+            if (event.message && (event.message.includes('WebSocket') || event.message.includes('SecurityError'))) {
+                console.warn('Sandbox caught WebSocket SecurityError. Handled gracefully.');
+                event.preventDefault();
+            }
+        });
+
         // Default Configuration prefilled with provided credentials
         const DEFAULT_CONFIG = {
             url: 'https://zkkrdccwxwqipaykqmad.supabase.co',
@@ -437,12 +456,17 @@
         let config = { ...DEFAULT_CONFIG };
         let supabaseClient = null;
         let realtimeSubscription = null;
+        let pollingInterval = null;
+        let isPollingMode = false;
         let rawLogsData = [];
         let filteredLogsData = [];
         let temperatureChart = null;
         let currentUnit = 'C'; // 'C' or 'F'
         let currentTimeRange = 'ALL'; // '1H', '24H', '7D', 'ALL'
         let currentChartType = 'line'; // 'line' or 'bar'
+        let isAutoScale = false; // Default false so fixed scale apply by default
+        let scaleMin = 10; // Default min in °C
+        let scaleMax = 35; // Default max in °C
 
         // Initialize Lucide icons
         lucide.createIcons();
@@ -532,15 +556,25 @@
 
                 updateUIConfigText();
 
+                // Clear any existing polling loop
+                if (pollingInterval) {
+                    clearInterval(pollingInterval);
+                    pollingInterval = null;
+                }
+
                 // Create Supabase client
                 const { createClient } = window.supabase;
                 supabaseClient = createClient(config.url, config.key, {
-                    auth: { persistSession: false }
+                    auth: { persistSession: false },
+                    realtime: { timeout: 5000 }
                 });
 
                 updateStatus('connecting', 'Connecting to Supabase...');
-                setupRealtimeSubscription();
-                fetchLogs();
+                
+                // Fetch initial logs first, then attempt realtime / fallback polling
+                fetchLogs().then(() => {
+                    setupRealtimeSubscription();
+                });
             } catch (err) {
                 console.error('Supabase init error:', err);
                 updateStatus('error', 'Init failed');
@@ -554,17 +588,13 @@
             document.getElementById('diagTable').innerText = config.tableName;
             document.getElementById('diagTempCol').innerText = config.tempColumn;
             document.getElementById('diagTimeCol').innerText = config.timeColumn;
-
-            document.getElementById('cfgUrl').value = config.url;
-            document.getElementById('cfgKey').value = config.key;
-            document.getElementById('cfgTable').value = config.tableName;
-            document.getElementById('cfgTempCol').value = config.tempColumn;
-            document.getElementById('cfgTimeCol').value = config.timeColumn;
         }
 
-        async function fetchLogs() {
-            showChartLoader(true);
-            setRefreshSpinning(true);
+        async function fetchLogs(isSilent = false) {
+            if (!isSilent) {
+                showChartLoader(true);
+                setRefreshSpinning(true);
+            }
 
             try {
                 // Fetch data from table ordered by time column ascending
@@ -575,15 +605,15 @@
                     .limit(500);
 
                 if (error) {
-                    // Try auto-detecting column names if configured column is missing
                     if (error.message && error.message.includes("column")) {
-                        showToast(`Query error: ${error.message}. Check Settings for column names.`, 'error');
+                        if (!isSilent) showToast(`Query error: ${error.message}. Check Settings for column names.`, 'error');
                     } else {
-                        showToast(`Supabase Error: ${error.message}`, 'error');
+                        if (!isSilent) showToast(`Supabase Error: ${error.message}`, 'error');
                     }
                     updateStatus('error', 'Database Error');
                     rawLogsData = [];
                 } else {
+                    const prevCount = rawLogsData.length;
                     rawLogsData = data || [];
                     
                     // Auto-detect columns if rawLogsData has items but schema differs
@@ -592,18 +622,25 @@
                     }
 
                     updateStatus('online', `Connected (${rawLogsData.length} records)`);
-                    logStreamMessage(`Fetched ${rawLogsData.length} entries from ${config.tableName}`);
+                    
+                    if (isSilent && rawLogsData.length > prevCount) {
+                        logStreamMessage(`🔄 Polled ${rawLogsData.length - prevCount} new record(s)`);
+                    } else if (!isSilent) {
+                        logStreamMessage(`Fetched ${rawLogsData.length} entries from ${config.tableName}`);
+                    }
                 }
 
                 processAndUpdateDashboard();
 
             } catch (err) {
                 console.error('Fetch exception:', err);
-                showToast(`Network error: ${err.message}`, 'error');
+                if (!isSilent) showToast(`Network error: ${err.message}`, 'error');
                 updateStatus('error', 'Connection Error');
             } finally {
-                showChartLoader(false);
-                setRefreshSpinning(false);
+                if (!isSilent) {
+                    showChartLoader(false);
+                    setRefreshSpinning(false);
+                }
             }
         }
 
@@ -637,13 +674,35 @@
         }
 
         function setupRealtimeSubscription() {
+            // Clean up existing subscription safely
             if (realtimeSubscription) {
-                supabaseClient.removeChannel(realtimeSubscription);
+                try {
+                    supabaseClient.removeChannel(realtimeSubscription);
+                } catch (e) {}
+                realtimeSubscription = null;
+            }
+
+            // Test if WebSockets can be instantiated safely in current sandbox context
+            let webSocketsAllowed = true;
+            try {
+                if (typeof WebSocket === 'undefined') {
+                    webSocketsAllowed = false;
+                }
+            } catch (e) {
+                webSocketsAllowed = false;
+            }
+
+            if (!webSocketsAllowed) {
+                enablePollingFallback("WebSockets disallowed by sandbox environment");
+                return;
             }
 
             try {
-                realtimeSubscription = supabaseClient
-                    .channel('temp_logs_channel')
+                logStreamMessage("Connecting Realtime WebSocket channel...");
+
+                realtimeSubscription = supabaseClient.channel('temp_logs_channel');
+
+                realtimeSubscription
                     .on(
                         'postgres_changes',
                         { event: 'INSERT', schema: 'public', table: config.tableName },
@@ -655,13 +714,54 @@
                             processAndUpdateDashboard();
                         }
                     )
-                    .subscribe((status) => {
+                    .subscribe((status, err) => {
                         if (status === 'SUBSCRIBED') {
-                            logStreamMessage(`Realtime channel subscribed to table [${config.tableName}]`);
+                            isPollingMode = false;
+                            logStreamMessage(`Connected! Subscribed to table [${config.tableName}]`);
+                            updateStreamUI('Realtime Stream', 'Postgres changes listener feed', true);
+                        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED' || err) {
+                            console.warn('Realtime channel issue status:', status, err);
+                            enablePollingFallback(`Realtime status: ${status}. Switched to Auto-Polling`);
                         }
                     });
+
             } catch (e) {
-                console.warn('Realtime subscription failed:', e);
+                console.warn('WebSocket restriction encountered:', e);
+                enablePollingFallback(`Sandbox restricted WebSockets. Switched to Auto-Polling`);
+            }
+        }
+
+        function enablePollingFallback(reason) {
+            if (isPollingMode) return;
+            isPollingMode = true;
+
+            logStreamMessage(`⚠️ ${reason}`);
+            logStreamMessage(`📡 Auto-polling active (Interval: 10s)`);
+
+            updateStreamUI('Auto-Polling Feed', 'Polling table every 10s (Sandbox safe)', false);
+
+            if (!pollingInterval) {
+                pollingInterval = setInterval(() => {
+                    fetchLogs(true); // Silent background fetch
+                }, 10000);
+            }
+        }
+
+        function updateStreamUI(titleText, subtext, isRealtime) {
+            document.getElementById('streamTitle').innerText = titleText;
+            document.getElementById('streamSubtext').innerText = subtext;
+            
+            const indicator = document.getElementById('streamIndicator');
+            if (isRealtime) {
+                indicator.innerHTML = `
+                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                `;
+            } else {
+                indicator.innerHTML = `
+                    <span class="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                    <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                `;
             }
         }
 
@@ -745,6 +845,17 @@
             temperatureChart.data.labels = labels;
             temperatureChart.data.datasets[0].data = values;
             temperatureChart.data.datasets[0].label = `Temperature (°${currentUnit})`;
+
+            // Apply custom or auto Y-Axis scaling
+            if (isAutoScale) {
+                delete temperatureChart.options.scales.y.min;
+                delete temperatureChart.options.scales.y.max;
+            } else {
+                const minVal = currentUnit === 'F' ? (scaleMin * 9/5) + 32 : scaleMin;
+                const maxVal = currentUnit === 'F' ? (scaleMax * 9/5) + 32 : scaleMax;
+                temperatureChart.options.scales.y.min = minVal;
+                temperatureChart.options.scales.y.max = maxVal;
+            }
 
             // Color coding based on trends
             const ctx = temperatureChart.ctx;
@@ -968,64 +1079,94 @@
             if (!confirm('This will insert 12 simulated temperature readings into table "' + config.tableName + '". Proceed?')) return;
 
             showChartLoader(true);
-            const now = new Date();
+            const now = Date.now();
+            const hourMs = 3600 * 1000;
             const mockRecords = [];
             let baseTemp = 21.5;
 
             for (let i = 12; i >= 0; i--) {
-                const timestamp = new Date(now.getTime() - i * 30 * 60 * 1000); // Every 30 mins
-                baseTemp += (Math.random() - 0.45) * 1.5; // Natural temperature fluctuation
+                const recordTime = new Date(now - i * hourMs).toISOString();
+                baseTemp += (Math.random() - 0.48) * 1.5;
+                const roundedTemp = Math.round(baseTemp * 10) / 10;
                 
-                const record = {};
-                record[config.tempColumn] = parseFloat(baseTemp.toFixed(1));
-                record[config.timeColumn] = timestamp.toISOString();
-                mockRecords.push(record);
+                const rec = {};
+                rec[config.tempColumn] = roundedTemp;
+                rec[config.timeColumn] = recordTime;
+                mockRecords.push(rec);
             }
 
             try {
-                const { error } = await supabaseClient
+                const { data, error } = await supabaseClient
                     .from(config.tableName)
                     .insert(mockRecords);
 
                 if (error) {
-                    showToast(`Failed to seed data: ${error.message}. Verify table exists in Supabase.`, 'error');
+                    showToast(`Failed to seed data: ${error.message}`, 'error');
                 } else {
                     showToast(`Successfully inserted 13 sample records!`, 'success');
                     fetchLogs();
                 }
             } catch (err) {
-                showToast(`Error seeding sample data: ${err.message}`, 'error');
+                showToast(`Error seeding data: ${err.message}`, 'error');
             } finally {
                 showChartLoader(false);
             }
         }
 
+        function updateScaleControlsUI() {
+            const autoBtn = document.getElementById('btnAutoScale');
+            const minInput = document.getElementById('inputScaleMin');
+            const maxInput = document.getElementById('inputScaleMax');
+            const unitLabel = document.getElementById('scaleUnitLabel');
+
+            if (!autoBtn || !minInput || !maxInput || !unitLabel) return;
+
+            unitLabel.innerText = `°${currentUnit}`;
+
+            if (isAutoScale) {
+                autoBtn.classList.add('bg-emerald-600', 'text-white', 'font-medium');
+                autoBtn.classList.remove('text-slate-400');
+                minInput.disabled = true;
+                maxInput.disabled = true;
+                minInput.classList.add('opacity-40', 'cursor-not-allowed');
+                maxInput.classList.add('opacity-40', 'cursor-not-allowed');
+            } else {
+                autoBtn.classList.remove('bg-emerald-600', 'text-white', 'font-medium');
+                autoBtn.classList.add('text-slate-400');
+                minInput.disabled = false;
+                maxInput.disabled = false;
+                minInput.classList.remove('opacity-40', 'cursor-not-allowed');
+                maxInput.classList.remove('opacity-40', 'cursor-not-allowed');
+
+                const displayMin = currentUnit === 'F' ? Math.round((scaleMin * 9/5) + 32) : scaleMin;
+                const displayMax = currentUnit === 'F' ? Math.round((scaleMax * 9/5) + 32) : scaleMax;
+                minInput.value = displayMin;
+                maxInput.value = displayMax;
+            }
+        }
+
         function exportCSV() {
             if (!filteredLogsData || filteredLogsData.length === 0) {
-                showToast('No logs available to export.', 'info');
+                showToast('No log data available to export.', 'error');
                 return;
             }
-
-            const headers = ['ID', 'Timestamp', `Temperature_Deg_${currentUnit}`];
-            const csvRows = [headers.join(',')];
-
-            filteredLogsData.forEach(row => {
-                const id = row.id !== undefined ? row.id : '';
-                const time = row[config.timeColumn] || '';
-                const temp = convertTemp(Number(row[config.tempColumn]) || 0).toFixed(2);
-                csvRows.push(`"${id}","${time}",${temp}`);
-            });
-
-            const csvContent = 'data:text/csv;charset=utf-8,' + csvRows.join('\n');
-            const encodedUri = encodeURI(csvContent);
+            const headers = ['ID', 'Timestamp', `Temperature (°${currentUnit})`];
+            const rows = filteredLogsData.map(item => [
+                item.id !== undefined ? item.id : '',
+                `"${item[config.timeColumn] || ''}"`,
+                convertTemp(Number(item[config.tempColumn]) || 0).toFixed(1)
+            ]);
+            
+            const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
             const link = document.createElement('a');
-            link.setAttribute('href', encodedUri);
+            link.setAttribute('href', url);
             link.setAttribute('download', `temperature_logs_${new Date().toISOString().slice(0,10)}.csv`);
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
-
-            showToast('CSV Export downloaded.', 'success');
+            showToast('Exported temperature logs CSV!', 'success');
         }
 
         function bindEvents() {
@@ -1034,8 +1175,37 @@
                 currentUnit = currentUnit === 'C' ? 'F' : 'C';
                 document.getElementById('unitText').innerText = `°${currentUnit}`;
                 document.querySelectorAll('#unitStatCurrent, #unitStatAvg, #unitStatMax, #unitStatMin').forEach(el => el.innerText = `°${currentUnit}`);
+                updateScaleControlsUI();
                 processAndUpdateDashboard();
             });
+
+            // Scale Controls Events
+            document.getElementById('btnAutoScale').addEventListener('click', () => {
+                isAutoScale = !isAutoScale;
+                updateScaleControlsUI();
+                processAndUpdateDashboard();
+            });
+
+            const handleScaleInputChange = () => {
+                const minVal = parseFloat(document.getElementById('inputScaleMin').value);
+                const maxVal = parseFloat(document.getElementById('inputScaleMax').value);
+
+                if (!isNaN(minVal) && !isNaN(maxVal) && maxVal > minVal) {
+                    if (currentUnit === 'F') {
+                        scaleMin = (minVal - 32) * 5/9;
+                        scaleMax = (maxVal - 32) * 5/9;
+                    } else {
+                        scaleMin = minVal;
+                        scaleMax = maxVal;
+                    }
+                    isAutoScale = false;
+                    updateScaleControlsUI();
+                    processAndUpdateDashboard();
+                }
+            };
+
+            document.getElementById('inputScaleMin').addEventListener('change', handleScaleInputChange);
+            document.getElementById('inputScaleMax').addEventListener('change', handleScaleInputChange);
 
             // Manual Refresh
             document.getElementById('refreshBtn').addEventListener('click', () => fetchLogs());
@@ -1129,6 +1299,7 @@
         window.onload = function() {
             initChart();
             bindEvents();
+            updateScaleControlsUI();
             initSupabase();
         };
     </script>
