@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "G:/My Drive/Projects/Code/plant_monitor/sensor_hub_spi_v02/sensor_hub_spi"
+		},
+		{
+			"name": "house_temp",
+			"path": ".."
+		}
+	],
+	"settings": {}
+}
