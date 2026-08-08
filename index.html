@@ -38,7 +38,6 @@
     <script src="https://unpkg.com/lucide@latest"></script>
 
     <style>
-        /* Custom scrollbars and styling */
         ::-webkit-scrollbar {
             width: 6px;
             height: 6px;
@@ -63,7 +62,6 @@
 </head>
 <body class="bg-darkbg text-slate-100 min-h-screen font-sans antialiased flex flex-col">
 
-    <!-- Header / Navigation -->
     <header class="border-b border-gray-800 bg-cardbg/80 backdrop-blur sticky top-0 z-40">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
             <div class="flex items-center space-x-3">
@@ -111,7 +109,6 @@
         </div>
     </header>
 
-    <!-- Main Content Area -->
     <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
 
         <!-- Notification Toast Container -->
@@ -184,7 +181,6 @@
             </div>
         </div>
 
-        <!-- Chart Section -->
         <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-6 shadow-xl">
             <!-- Chart Toolbar -->
             <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
@@ -259,7 +255,6 @@
             </div>
         </div>
 
-        <!-- Secondary Grid: Raw Logs Table & Live Realtime Ticker -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
             <!-- Raw Data Table (Span 2) -->
@@ -437,8 +432,15 @@
     <script>
         // Catch sandbox WebSocket SecurityErrors globally to prevent app execution interruption
         window.addEventListener('error', function(event) {
-            if (event.message && (event.message.includes('WebSocket') || event.message.includes('SecurityError'))) {
-                console.warn('Sandbox caught WebSocket SecurityError. Handled gracefully.');
+            if (event.message && (event.message.includes('WebSocket') || event.message.includes('SecurityError') || event.message.includes('Canvas'))) {
+                console.warn('Sandboxed Canvas environment caught WebSocket SecurityError. Auto-polling active.');
+                event.preventDefault();
+            }
+        });
+
+        window.addEventListener('unhandledrejection', function(event) {
+            if (event.reason && (String(event.reason).includes('WebSocket') || String(event.reason).includes('SecurityError'))) {
+                console.warn('Handled async WebSocket rejection in sandboxed environment.');
                 event.preventDefault();
             }
         });
@@ -464,20 +466,41 @@
         let currentUnit = 'C'; // 'C' or 'F'
         let currentTimeRange = 'ALL'; // '1H', '24H', '7D', 'ALL'
         let currentChartType = 'line'; // 'line' or 'bar'
-        let isAutoScale = false; // Default false so fixed scale apply by default
+        let isAutoScale = false; // Default false so fixed scale applies
         let scaleMin = 10; // Default min in °C
         let scaleMax = 35; // Default max in °C
 
         // Initialize Lucide icons
         lucide.createIcons();
 
+        // Color helper to determine point-specific temperature colors (Warm, Normal, Cool)
+        function getTempColor(val, alpha = 1) {
+            if (val === undefined || val === null || isNaN(Number(val))) return `rgba(16, 185, 129, ${alpha})`;
+            const numVal = Number(val);
+            const valC = currentUnit === 'F' ? (numVal - 32) * 5/9 : numVal;
+            if (valC > 28) return `rgba(245, 158, 11, ${alpha})`; // High (>28°C): Warm Amber
+            if (valC < 15) return `rgba(6, 182, 212, ${alpha})`;  // Low (<15°C): Cool Cyan
+            return `rgba(16, 185, 129, ${alpha})`;               // Normal (15-28°C): Emerald Green
+        }
+
+        // Palette helper returning light, main, and dark shade tokens for gradient dot fills
+        function getTempColors(val) {
+            if (val === undefined || val === null || isNaN(Number(val))) {
+                return { main: '#10b981', light: '#a7f3d0', dark: '#047857' };
+            }
+            const numVal = Number(val);
+            const valC = currentUnit === 'F' ? (numVal - 32) * 5/9 : numVal;
+            if (valC > 28) {
+                return { main: '#f59e0b', light: '#fef08a', dark: '#b45309' }; // Warm Amber
+            }
+            if (valC < 15) {
+                return { main: '#06b6d4', light: '#cffaff', dark: '#0e7490' }; // Cool Cyan
+            }
+            return { main: '#10b981', light: '#a7f3d0', dark: '#047857' }; // Emerald Green
+        }
+
         function initChart() {
             const ctx = document.getElementById('tempChart').getContext('2d');
-            
-            // Create gradient
-            const gradient = ctx.createLinearGradient(0, 0, 0, 300);
-            gradient.addColorStop(0, 'rgba(16, 185, 129, 0.35)');
-            gradient.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
 
             temperatureChart = new Chart(ctx, {
                 type: currentChartType,
@@ -487,15 +510,24 @@
                         label: 'Temperature',
                         data: [],
                         borderColor: '#10b981',
-                        borderWidth: 2,
-                        backgroundColor: gradient,
+                        borderWidth: 2.5,
+                        backgroundColor: 'rgba(16, 185, 129, 0.12)',
                         fill: true,
-                        tension: 0.35,
-                        pointBackgroundColor: '#10b981',
-                        pointBorderColor: '#0f172a',
+                        tension: 0.4,
+                        pointBackgroundColor: function(context) {
+                            const val = context && context.raw !== undefined ? context.raw : (context && context.parsed ? context.parsed.y : 20);
+                            return getTempColor(val, 1);
+                        },
+                        pointHoverBackgroundColor: function(context) {
+                            const val = context && context.raw !== undefined ? context.raw : (context && context.parsed ? context.parsed.y : 20);
+                            return getTempColor(val, 1);
+                        },
+                        pointBorderColor: '#0b0f19',
                         pointBorderWidth: 2,
-                        pointRadius: 4,
-                        pointHoverRadius: 6
+                        pointRadius: 5,
+                        pointHoverRadius: 8,
+                        pointHoverBorderColor: '#ffffff',
+                        pointHoverBorderWidth: 2
                     }]
                 },
                 options: {
@@ -508,23 +540,40 @@
                     plugins: {
                         legend: { display: false },
                         tooltip: {
-                            backgroundColor: '#1e293b',
-                            titleColor: '#94a3b8',
-                            bodyColor: '#38bdf8',
-                            borderColor: '#334155',
+                            backgroundColor: '#111827',
+                            titleColor: '#9ca3af',
+                            bodyColor: '#f3f4f6',
+                            borderColor: '#374151',
                             borderWidth: 1,
-                            padding: 10,
-                            displayColors: false,
+                            padding: 12,
+                            displayColors: true,
+                            boxWidth: 8,
+                            boxHeight: 8,
+                            usePointStyle: true,
                             callbacks: {
                                 label: function(context) {
-                                    return `Temp: ${context.parsed.y.toFixed(1)}°${currentUnit}`;
+                                    const val = context.parsed && context.parsed.y !== undefined ? context.parsed.y : context.raw;
+                                    const numVal = Number(val);
+                                    const valC = currentUnit === 'F' ? (numVal - 32) * 5/9 : numVal;
+                                    let status = 'Normal';
+                                    if (valC > 28) status = 'Warm';
+                                    if (valC < 15) status = 'Cool';
+                                    return ` Temp: ${numVal.toFixed(1)}°${currentUnit} (${status})`;
+                                },
+                                labelColor: function(context) {
+                                    const val = context.parsed && context.parsed.y !== undefined ? context.parsed.y : context.raw;
+                                    const color = getTempColor(val, 1);
+                                    return {
+                                        borderColor: color,
+                                        backgroundColor: color
+                                    };
                                 }
                             }
                         }
                     },
                     scales: {
                         x: {
-                            grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                            grid: { color: 'rgba(255, 255, 255, 0.04)' },
                             ticks: {
                                 color: '#94a3b8',
                                 font: { size: 10, family: 'monospace' },
@@ -532,7 +581,7 @@
                             }
                         },
                         y: {
-                            grid: { color: 'rgba(255, 255, 255, 0.08)' },
+                            grid: { color: 'rgba(255, 255, 255, 0.06)' },
                             ticks: {
                                 color: '#94a3b8',
                                 font: { size: 10, family: 'monospace' },
@@ -673,6 +722,19 @@
             updateUIConfigText();
         }
 
+        function isWebSocketAllowed() {
+            try {
+                if (typeof WebSocket === 'undefined') return false;
+                // In Canvas or sandboxed iframe containers (e.g. *.usercontent.goog), WebSockets throw SecurityError by host policy
+                if (window.self !== window.top || window.location.hostname.includes('usercontent.goog') || window.location.hostname.includes('scf.')) {
+                    return false;
+                }
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
         function setupRealtimeSubscription() {
             // Clean up existing subscription safely
             if (realtimeSubscription) {
@@ -682,18 +744,9 @@
                 realtimeSubscription = null;
             }
 
-            // Test if WebSockets can be instantiated safely in current sandbox context
-            let webSocketsAllowed = true;
-            try {
-                if (typeof WebSocket === 'undefined') {
-                    webSocketsAllowed = false;
-                }
-            } catch (e) {
-                webSocketsAllowed = false;
-            }
-
-            if (!webSocketsAllowed) {
-                enablePollingFallback("WebSockets disallowed by sandbox environment");
+            // Check if WebSockets are allowed in the host environment before attempting instantiation
+            if (!isWebSocketAllowed()) {
+                enablePollingFallback("Canvas/Iframe sandbox detected. Activated safe Auto-Polling (10s).");
                 return;
             }
 
@@ -721,13 +774,13 @@
                             updateStreamUI('Realtime Stream', 'Postgres changes listener feed', true);
                         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED' || err) {
                             console.warn('Realtime channel issue status:', status, err);
-                            enablePollingFallback(`Realtime status: ${status}. Switched to Auto-Polling`);
+                            enablePollingFallback(`Realtime status: ${status}. Switched to Auto-Polling.`);
                         }
                     });
 
             } catch (e) {
                 console.warn('WebSocket restriction encountered:', e);
-                enablePollingFallback(`Sandbox restricted WebSockets. Switched to Auto-Polling`);
+                enablePollingFallback(`Sandbox restricted WebSockets. Switched to Auto-Polling.`);
             }
         }
 
@@ -857,26 +910,61 @@
                 temperatureChart.options.scales.y.max = maxVal;
             }
 
-            // Color coding based on trends
-            const ctx = temperatureChart.ctx;
-            const gradient = ctx.createLinearGradient(0, 0, 0, 300);
-            if (currentUnit === 'C' && values[values.length - 1] > 28) {
-                gradient.addColorStop(0, 'rgba(245, 158, 11, 0.4)');
-                gradient.addColorStop(1, 'rgba(245, 158, 11, 0.0)');
-                temperatureChart.data.datasets[0].borderColor = '#f59e0b';
+            // Apply clean, elegant chart fill styling
+            if (currentChartType === 'bar') {
+                temperatureChart.data.datasets[0].backgroundColor = function(context) {
+                    const val = context && context.raw !== undefined ? context.raw : (context && context.parsed ? context.parsed.y : 20);
+                    return getTempColor(val, 0.85);
+                };
             } else {
-                gradient.addColorStop(0, 'rgba(16, 185, 129, 0.35)');
-                gradient.addColorStop(1, 'rgba(16, 185, 129, 0.0)');
-                temperatureChart.data.datasets[0].borderColor = '#10b981';
+                const ctx = temperatureChart.ctx;
+                const chartArea = temperatureChart.chartArea;
+
+                if (chartArea) {
+                    // Multi-stop thermal zonal gradient fill matching temperature thresholds
+                    const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+                    gradient.addColorStop(0.00, 'rgba(245, 158, 11, 0.35)');  // Top / High Temp: Warm Amber Glow
+                    gradient.addColorStop(0.38, 'rgba(16, 185, 129, 0.22)');  // Mid / Normal Temp: Emerald Green
+                    gradient.addColorStop(0.72, 'rgba(6, 182, 212, 0.14)');   // Low / Cool Temp: Cyan Tint
+                    gradient.addColorStop(1.00, 'rgba(11, 15, 25, 0.00)');    // Base: Fades smoothly into background
+                    temperatureChart.data.datasets[0].backgroundColor = gradient;
+                } else {
+                    temperatureChart.data.datasets[0].backgroundColor = 'rgba(16, 185, 129, 0.15)';
+                }
             }
-            temperatureChart.data.datasets[0].backgroundColor = gradient;
 
             temperatureChart.update();
         }
 
+        function filterDataByTimeRange(data, range) {
+            if (range === 'ALL' || !data || data.length === 0) return data;
+            
+            const now = new Date().getTime();
+            let cutoffMs = 0;
+
+            if (range === '1H') cutoffMs = 60 * 60 * 1000;
+            else if (range === '24H') cutoffMs = 24 * 60 * 60 * 1000;
+            else if (range === '7D') cutoffMs = 7 * 24 * 60 * 60 * 1000;
+
+            return data.filter(item => {
+                const itemTime = new Date(item[config.timeColumn]).getTime();
+                return (now - itemTime) <= cutoffMs;
+            });
+        }
+
         function renderTable(dataList) {
             const tbody = document.getElementById('logsTableBody');
-            const searchVal = document.getElementById('searchInput').value.toLowerCase().trim();
+            const searchInput = document.getElementById('searchInput');
+            const searchVal = searchInput ? searchInput.value.toLowerCase().trim() : '';
+
+            if (!tbody) return;
+
+            if (!dataList || dataList.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-6 text-slate-500">No log records found</td></tr>`;
+                const countInfo = document.getElementById('tableCountInfo');
+                if (countInfo) countInfo.innerText = 'Showing 0 logs';
+                return;
+            }
 
             let rows = [...dataList].reverse(); // Most recent first for table view
 
@@ -889,7 +977,10 @@
                 });
             }
 
-            document.getElementById('tableCountInfo').innerText = `Showing ${rows.length} of ${dataList.length} records`;
+            const countInfo = document.getElementById('tableCountInfo');
+            if (countInfo) {
+                countInfo.innerText = `Showing ${rows.length} of ${dataList.length} records`;
+            }
 
             if (rows.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="4" class="text-center py-6 text-slate-500">No matching log records found</td></tr>`;
@@ -904,8 +995,8 @@
                 
                 // Status badge
                 let statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Normal</span>';
-                if (rawTemp > 30) {
-                    statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20">High</span>';
+                if (rawTemp > 28) {
+                    statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20">Warm</span>';
                 } else if (rawTemp < 15) {
                     statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">Cool</span>';
                 }
