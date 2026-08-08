@@ -222,6 +222,13 @@
                         </button>
                     </div>
 
+                    <!-- Gap Break Control -->
+                    <button id="btnGapToggle" class="px-2.5 py-1 rounded-md transition text-slate-400 hover:text-white bg-slate-900 border border-slate-800 text-xs flex items-center gap-1.5" title="Toggle Line Break on Time Gaps">
+                        <i data-lucide="scissors" class="w-3.5 h-3.5 text-slate-400"></i>
+                        <span>Gap Break:</span>
+                        <strong id="gapThresholdLabel" class="text-emerald-400">30m</strong>
+                    </button>
+
                     <!-- Seed Mock Data Button if Table Empty -->
                     <button id="seedDataBtn" class="px-3 py-1 bg-indigo-600/20 border border-indigo-500/30 hover:bg-indigo-600/30 text-indigo-300 rounded-lg text-xs transition flex items-center gap-1.5">
                         <i data-lucide="database" class="w-3.5 h-3.5"></i>
@@ -469,6 +476,8 @@
         let isAutoScale = false; // Default false so fixed scale applies
         let scaleMin = 10; // Default min in °C
         let scaleMax = 35; // Default max in °C
+        let breakGaps = true; // Break line when large time gaps occur
+        let gapThresholdMinutes = 30; // Threshold in minutes for breaking gap
 
         // Initialize Lucide icons
         lucide.createIcons();
@@ -483,29 +492,12 @@
             return `rgba(16, 185, 129, ${alpha})`;               // Normal (15-28°C): Emerald Green
         }
 
-        // Palette helper returning light, main, and dark shade tokens for gradient dot fills
-        function getTempColors(val) {
-            if (val === undefined || val === null || isNaN(Number(val))) {
-                return { main: '#10b981', light: '#a7f3d0', dark: '#047857' };
-            }
-            const numVal = Number(val);
-            const valC = currentUnit === 'F' ? (numVal - 32) * 5/9 : numVal;
-            if (valC > 28) {
-                return { main: '#f59e0b', light: '#fef08a', dark: '#b45309' }; // Warm Amber
-            }
-            if (valC < 15) {
-                return { main: '#06b6d4', light: '#cffaff', dark: '#0e7490' }; // Cool Cyan
-            }
-            return { main: '#10b981', light: '#a7f3d0', dark: '#047857' }; // Emerald Green
-        }
-
         function initChart() {
             const ctx = document.getElementById('tempChart').getContext('2d');
 
             temperatureChart = new Chart(ctx, {
                 type: currentChartType,
                 data: {
-                    labels: [],
                     datasets: [{
                         label: 'Temperature',
                         data: [],
@@ -513,19 +505,32 @@
                         borderWidth: 2.5,
                         backgroundColor: 'rgba(16, 185, 129, 0.12)',
                         fill: true,
-                        tension: 0.4,
+                        tension: 0.3,
+                        spanGaps: false,
                         pointBackgroundColor: function(context) {
-                            const val = context && context.raw !== undefined ? context.raw : (context && context.parsed ? context.parsed.y : 20);
+                            const raw = context ? context.raw : null;
+                            const val = raw && typeof raw === 'object' ? raw.y : raw;
+                            if (val === null || val === undefined) return 'transparent';
                             return getTempColor(val, 1);
                         },
                         pointHoverBackgroundColor: function(context) {
-                            const val = context && context.raw !== undefined ? context.raw : (context && context.parsed ? context.parsed.y : 20);
+                            const raw = context ? context.raw : null;
+                            const val = raw && typeof raw === 'object' ? raw.y : raw;
+                            if (val === null || val === undefined) return 'transparent';
                             return getTempColor(val, 1);
                         },
                         pointBorderColor: '#0b0f19',
                         pointBorderWidth: 2,
-                        pointRadius: 5,
-                        pointHoverRadius: 8,
+                        pointRadius: function(context) {
+                            const raw = context ? context.raw : null;
+                            const val = raw && typeof raw === 'object' ? raw.y : raw;
+                            return (val === null || val === undefined) ? 0 : 5;
+                        },
+                        pointHoverRadius: function(context) {
+                            const raw = context ? context.raw : null;
+                            const val = raw && typeof raw === 'object' ? raw.y : raw;
+                            return (val === null || val === undefined) ? 0 : 8;
+                        },
                         pointHoverBorderColor: '#ffffff',
                         pointHoverBorderWidth: 2
                     }]
@@ -534,8 +539,9 @@
                     responsive: true,
                     maintainAspectRatio: false,
                     interaction: {
-                        mode: 'index',
+                        mode: 'nearest',
                         intersect: false,
+                        axis: 'x'
                     },
                     plugins: {
                         legend: { display: false },
@@ -550,9 +556,26 @@
                             boxWidth: 8,
                             boxHeight: 8,
                             usePointStyle: true,
+                            filter: function(tooltipItem) {
+                                const raw = tooltipItem.raw;
+                                const val = raw && typeof raw === 'object' ? raw.y : raw;
+                                return val !== null && val !== undefined;
+                            },
                             callbacks: {
+                                title: function(context) {
+                                    if (!context || !context.length) return '';
+                                    const item = context[0];
+                                    const raw = item.raw;
+                                    const timeVal = raw && typeof raw === 'object' ? raw.x : item.parsed.x;
+                                    if (!timeVal) return '';
+                                    const d = new Date(timeVal);
+                                    if (isNaN(d.getTime())) return '';
+                                    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                                },
                                 label: function(context) {
-                                    const val = context.parsed && context.parsed.y !== undefined ? context.parsed.y : context.raw;
+                                    const raw = context.raw;
+                                    const val = raw && typeof raw === 'object' ? raw.y : context.parsed.y;
+                                    if (val === null || val === undefined) return '';
                                     const numVal = Number(val);
                                     const valC = currentUnit === 'F' ? (numVal - 32) * 5/9 : numVal;
                                     let status = 'Normal';
@@ -561,7 +584,8 @@
                                     return ` Temp: ${numVal.toFixed(1)}°${currentUnit} (${status})`;
                                 },
                                 labelColor: function(context) {
-                                    const val = context.parsed && context.parsed.y !== undefined ? context.parsed.y : context.raw;
+                                    const raw = context.raw;
+                                    const val = raw && typeof raw === 'object' ? raw.y : context.parsed.y;
                                     const color = getTempColor(val, 1);
                                     return {
                                         borderColor: color,
@@ -573,11 +597,26 @@
                     },
                     scales: {
                         x: {
+                            type: 'linear',
                             grid: { color: 'rgba(255, 255, 255, 0.04)' },
                             ticks: {
                                 color: '#94a3b8',
                                 font: { size: 10, family: 'monospace' },
-                                maxRotation: 0
+                                maxRotation: 0,
+                                callback: function(value) {
+                                    const d = new Date(value);
+                                    if (isNaN(d.getTime())) return '';
+                                    
+                                    const scale = this;
+                                    const minVal = scale.min || 0;
+                                    const maxVal = scale.max || 0;
+                                    const spanMs = maxVal - minVal;
+
+                                    if (spanMs > 24 * 3600 * 1000) {
+                                        return d.toLocaleDateString([], { month: 'numeric', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                    }
+                                    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                }
                             }
                         },
                         y: {
@@ -827,7 +866,7 @@
                 emptyStateEl.classList.remove('hidden');
                 resetKPICards();
                 renderTable([]);
-                updateChart([], []);
+                updateChart([]);
                 return;
             } else {
                 emptyStateEl.classList.add('hidden');
@@ -865,9 +904,37 @@
                 document.getElementById('statMinTime').innerText = `At ${formatTime(filteredLogsData[minIndex][config.timeColumn])}`;
             }
 
-            // Update Labels & Chart
-            const labels = filteredLogsData.map(d => formatChartLabel(d[config.timeColumn]));
-            updateChart(labels, tempsConverted);
+            // Build time-proportional chart data points with gap handling
+            const chartDataPoints = [];
+            const gapThresholdMs = gapThresholdMinutes * 60 * 1000;
+
+            for (let i = 0; i < filteredLogsData.length; i++) {
+                const item = filteredLogsData[i];
+                const timeMs = new Date(item[config.timeColumn]).getTime();
+                const tempC = Number(item[config.tempColumn]) || 0;
+                const tempVal = convertTemp(tempC);
+
+                if (isNaN(timeMs)) continue;
+
+                if (breakGaps && gapThresholdMinutes > 0 && i > 0) {
+                    const prevTimeMs = new Date(filteredLogsData[i - 1][config.timeColumn]).getTime();
+                    if (!isNaN(prevTimeMs) && (timeMs - prevTimeMs) > gapThresholdMs) {
+                        // Inject null point immediately after previous timestamp to break line
+                        chartDataPoints.push({
+                            x: prevTimeMs + 1000,
+                            y: null
+                        });
+                    }
+                }
+
+                chartDataPoints.push({
+                    x: timeMs,
+                    y: tempVal
+                });
+            }
+
+            // Update Chart
+            updateChart(chartDataPoints);
 
             // Update Table
             renderTable(filteredLogsData);
@@ -875,29 +942,13 @@
             lucide.createIcons();
         }
 
-        function filterDataByTimeRange(data, range) {
-            if (range === 'ALL' || !data || data.length === 0) return data;
-            
-            const now = new Date().getTime();
-            let cutoffMs = 0;
-
-            if (range === '1H') cutoffMs = 60 * 60 * 1000;
-            else if (range === '24H') cutoffMs = 24 * 60 * 60 * 1000;
-            else if (range === '7D') cutoffMs = 7 * 24 * 60 * 60 * 1000;
-
-            return data.filter(item => {
-                const itemTime = new Date(item[config.timeColumn]).getTime();
-                return (now - itemTime) <= cutoffMs;
-            });
-        }
-
-        function updateChart(labels, values) {
+        function updateChart(chartDataPoints) {
             if (!temperatureChart) return;
 
             temperatureChart.config.type = currentChartType;
-            temperatureChart.data.labels = labels;
-            temperatureChart.data.datasets[0].data = values;
+            temperatureChart.data.datasets[0].data = chartDataPoints || [];
             temperatureChart.data.datasets[0].label = `Temperature (°${currentUnit})`;
+            temperatureChart.data.datasets[0].spanGaps = !breakGaps;
 
             // Apply custom or auto Y-Axis scaling
             if (isAutoScale) {
@@ -913,7 +964,9 @@
             // Apply clean, elegant chart fill styling
             if (currentChartType === 'bar') {
                 temperatureChart.data.datasets[0].backgroundColor = function(context) {
-                    const val = context && context.raw !== undefined ? context.raw : (context && context.parsed ? context.parsed.y : 20);
+                    const raw = context ? context.raw : null;
+                    const val = raw && typeof raw === 'object' ? raw.y : raw;
+                    if (val === null || val === undefined) return 'transparent';
                     return getTempColor(val, 0.85);
                 };
             } else {
@@ -1373,6 +1426,38 @@
                 currentChartType = 'bar';
                 document.getElementById('btnChartBar').classList.add('bg-slate-800', 'text-emerald-400');
                 document.getElementById('btnChartLine').classList.remove('bg-slate-800', 'text-emerald-400');
+                processAndUpdateDashboard();
+            });
+
+            // Gap Break Toggle Button
+            document.getElementById('btnGapToggle').addEventListener('click', () => {
+                if (gapThresholdMinutes === 30) {
+                    gapThresholdMinutes = 60;
+                    breakGaps = true;
+                } else if (gapThresholdMinutes === 60) {
+                    gapThresholdMinutes = 180;
+                    breakGaps = true;
+                } else if (gapThresholdMinutes === 180) {
+                    gapThresholdMinutes = 0;
+                    breakGaps = false;
+                } else {
+                    gapThresholdMinutes = 30;
+                    breakGaps = true;
+                }
+
+                const label = document.getElementById('gapThresholdLabel');
+                if (label) {
+                    if (!breakGaps || gapThresholdMinutes === 0) {
+                        label.innerText = 'Off';
+                        label.className = 'text-slate-500';
+                    } else if (gapThresholdMinutes >= 60) {
+                        label.innerText = (gapThresholdMinutes / 60) + 'h';
+                        label.className = 'text-emerald-400';
+                    } else {
+                        label.innerText = gapThresholdMinutes + 'm';
+                        label.className = 'text-emerald-400';
+                    }
+                }
                 processAndUpdateDashboard();
             });
 
