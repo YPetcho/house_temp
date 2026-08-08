@@ -950,6 +950,30 @@
             temperatureChart.data.datasets[0].label = `Temperature (°${currentUnit})`;
             temperatureChart.data.datasets[0].spanGaps = !breakGaps;
 
+            // Tight X-Axis bounds fitting to prevent timeline from extending past latest data into future
+            if (chartDataPoints && chartDataPoints.length > 0) {
+                const validPoints = chartDataPoints.filter(p => p.y !== null && p.x !== null && !isNaN(p.x));
+                if (validPoints.length > 0) {
+                    const minTime = validPoints[0].x;
+                    const maxTime = validPoints[validPoints.length - 1].x;
+                    
+                    if (currentTimeRange !== 'ALL') {
+                        let rangeMs = 60 * 60 * 1000;
+                        if (currentTimeRange === '24H') rangeMs = 24 * 60 * 60 * 1000;
+                        if (currentTimeRange === '7D') rangeMs = 7 * 24 * 60 * 60 * 1000;
+                        
+                        temperatureChart.options.scales.x.min = maxTime - rangeMs;
+                        temperatureChart.options.scales.x.max = maxTime;
+                    } else {
+                        temperatureChart.options.scales.x.min = minTime;
+                        temperatureChart.options.scales.x.max = maxTime;
+                    }
+                }
+            } else {
+                delete temperatureChart.options.scales.x.min;
+                delete temperatureChart.options.scales.x.max;
+            }
+
             // Apply custom or auto Y-Axis scaling
             if (isAutoScale) {
                 delete temperatureChart.options.scales.y.min;
@@ -992,16 +1016,20 @@
         function filterDataByTimeRange(data, range) {
             if (range === 'ALL' || !data || data.length === 0) return data;
             
-            const now = new Date().getTime();
-            let cutoffMs = 0;
+            const timestamps = data.map(item => new Date(item[config.timeColumn]).getTime()).filter(t => !isNaN(t));
+            if (timestamps.length === 0) return data;
+            
+            const latestTime = Math.max(...timestamps);
+            const refTime = Math.max(Date.now(), latestTime);
 
+            let cutoffMs = 0;
             if (range === '1H') cutoffMs = 60 * 60 * 1000;
             else if (range === '24H') cutoffMs = 24 * 60 * 60 * 1000;
             else if (range === '7D') cutoffMs = 7 * 24 * 60 * 60 * 1000;
 
             return data.filter(item => {
                 const itemTime = new Date(item[config.timeColumn]).getTime();
-                return (now - itemTime) <= cutoffMs;
+                return (refTime - itemTime) <= cutoffMs;
             });
         }
 
