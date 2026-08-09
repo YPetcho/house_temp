@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en" class="dark h-full bg-slate-950 text-slate-100">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Supabase Temperature Log Analytics</title>
+    <title>Supabase Temperature Telemetry Dashboard</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -13,133 +13,114 @@
             theme: {
                 extend: {
                     colors: {
-                        brand: {
-                            50: '#ecfdf5',
-                            100: '#d1fae5',
-                            500: '#10b981',
-                            600: '#059669',
-                            700: '#047857',
-                            900: '#064e3b',
-                        },
-                        darkbg: '#0b0f19',
-                        cardbg: '#111827',
-                        cardborder: '#1f2937'
+                        cardbg: '#0f172a',
+                        cardborder: '#1e293b',
                     }
                 }
             }
         }
     </script>
-
-    <!-- Supabase JS CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <!-- Chart.js CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Google Font: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Chart.js & Luxon adapter -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+    
     <!-- Lucide Icons -->
     <script src="https://unpkg.com/lucide@latest"></script>
-
+    
+    <!-- Supabase JS Client v2 -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    
     <style>
-        ::-webkit-scrollbar {
-            width: 6px;
-            height: 6px;
-        }
-        ::-webkit-scrollbar-track {
-            background: #0f172a;
-        }
-        ::-webkit-scrollbar-thumb {
-            background: #334155;
-            border-radius: 4px;
-        }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #475569;
-        }
-        .glow-emerald {
-            box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.25);
-        }
-        .glow-blue {
-            box-shadow: 0 0 25px -5px rgba(59, 130, 246, 0.25);
-        }
+        body { font-family: 'Inter', sans-serif; }
+        /* Custom scrollbars */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #090d16; }
+        ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #334155; }
     </style>
 </head>
-<body class="bg-darkbg text-slate-100 min-h-screen font-sans antialiased flex flex-col">
+<body class="h-full flex flex-col bg-slate-950 text-slate-100 antialiased selection:bg-blue-500 selection:text-white">
 
-    <header class="border-b border-gray-800 bg-cardbg/80 backdrop-blur sticky top-0 z-40">
+    <!-- Navigation Bar -->
+    <header class="border-b border-slate-800/80 bg-slate-900/90 backdrop-blur sticky top-0 z-30">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
             <div class="flex items-center space-x-3">
-                <div class="p-2 bg-emerald-500/10 rounded-xl border border-emerald-500/20 text-emerald-400">
-                    <i data-lucide="thermometer-snowflake" class="w-6 h-6"></i>
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                    <i data-lucide="thermometer" class="w-5 h-5 text-white"></i>
                 </div>
                 <div>
-                    <h1 class="font-bold text-lg leading-tight flex items-center gap-2">
-                        TempPulse <span class="text-xs font-mono font-normal px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Supabase Live</span>
-                    </h1>
-                    <p class="text-xs text-slate-400 font-mono" id="supaUrlDisplay">zkkrdccwxwqipaykqmad.supabase.co</p>
+                    <div class="flex items-center gap-2">
+                        <h1 class="font-bold text-lg text-white tracking-tight">Telemetry Monitor</h1>
+                        <span class="text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20">Live</span>
+                    </div>
+                    <p class="text-xs text-slate-400">Supabase Temperature Telemetry</p>
                 </div>
             </div>
 
-            <!-- Controls & Status -->
-            <div class="flex items-center space-x-3">
+            <div class="flex items-center space-x-2 sm:space-x-3">
                 <!-- Status Badge -->
-                <div id="statusBadge" class="hidden sm:flex items-center space-x-2 px-3 py-1 rounded-full bg-slate-800 border border-slate-700 text-xs font-medium text-slate-300">
-                    <span id="statusPing" class="w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
-                    <span id="statusDot" class="w-2 h-2 rounded-full bg-amber-400"></span>
-                    <span id="statusText">Connecting...</span>
+                <div id="statusBadge" class="hidden sm:flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 text-xs">
+                    <span id="connStatusDot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+                    <span id="connStatusText" class="text-slate-300 font-medium">Connecting...</span>
                 </div>
 
                 <!-- Unit Toggle -->
-                <button id="unitToggleBtn" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-bold transition flex items-center gap-1">
-                    <span id="unitText">°C</span>
+                <button id="unitToggleBtn" onclick="toggleUnit()" class="flex items-center space-x-1 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-slate-200 transition">
+                    <span id="unitToggleText">°C / °F</span>
                 </button>
 
-                <!-- Refresh Button -->
-                <button id="refreshBtn" title="Fetch Latest Data" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg transition active:scale-95">
-                    <i data-lucide="refresh-cw" class="w-4 h-4" id="refreshIcon"></i>
+                <!-- Action Buttons -->
+                <button onclick="fetchLogs()" class="p-2 sm:px-3 sm:py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-medium flex items-center space-x-1.5 transition">
+                    <i data-lucide="refresh-cw" id="refreshIcon" class="w-4 h-4 text-slate-400"></i>
+                    <span class="hidden sm:inline">Refresh</span>
                 </button>
 
-                <!-- Add Log Button -->
-                <button id="openAddModalBtn" class="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-lg transition flex items-center gap-1.5 shadow-lg shadow-emerald-900/30">
+                <button onclick="openModal('addLogModal')" class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold flex items-center space-x-1.5 shadow-md shadow-blue-600/20 transition">
                     <i data-lucide="plus" class="w-4 h-4"></i>
-                    <span class="hidden sm:inline">Add Log</span>
+                    <span class="hidden sm:inline">Log Reading</span>
                 </button>
 
-                <!-- Settings Button -->
-                <button id="openSettingsModalBtn" title="Configure Database Connection" class="p-2 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700 rounded-lg transition">
+                <button onclick="openModal('settingsModal')" class="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-400 hover:text-white transition" title="Settings">
                     <i data-lucide="settings" class="w-4 h-4"></i>
                 </button>
             </div>
         </div>
     </header>
 
+    <!-- Main Container -->
     <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
 
-        <!-- Notification Toast Container -->
-        <div id="toastContainer" class="fixed top-20 right-4 z-50 space-y-2 max-w-md w-full pointer-events-none"></div>
-
-        <!-- Metric KPI Cards -->
+        <!-- KPI Cards Grid -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            
             <!-- Current Temp Card -->
-            <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-5 glow-emerald relative overflow-hidden">
-                <div class="absolute -right-4 -bottom-4 opacity-5 text-emerald-400">
-                    <i data-lucide="thermometer" class="w-28 h-28"></i>
-                </div>
+            <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-5 relative overflow-hidden group hover:border-slate-700 transition">
                 <div class="flex items-center justify-between text-slate-400 text-xs font-medium mb-1">
-                    <span>LATEST READING</span>
-                    <i data-lucide="activity" class="w-4 h-4 text-emerald-400"></i>
+                    <span>CURRENT TEMP</span>
+                    <i data-lucide="activity" class="w-4 h-4 text-blue-400"></i>
                 </div>
                 <div class="flex items-baseline space-x-2">
                     <span class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white" id="statCurrent">--</span>
                     <span class="text-sm text-slate-400 font-semibold" id="unitStatCurrent">°C</span>
                 </div>
-                <div class="mt-2 text-xs text-slate-400 flex items-center gap-1" id="statTimestamp">
-                    <i data-lucide="clock" class="w-3.5 h-3.5 text-slate-500"></i>
-                    <span>Awaiting data...</span>
+                <div class="mt-2 text-xs text-slate-400 flex items-center justify-between">
+                    <span>Last updated</span>
+                    <span class="text-slate-200 font-medium truncate max-w-[110px]" id="statCurrentTime">--</span>
                 </div>
             </div>
 
             <!-- Average Temp Card -->
-            <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-5 relative overflow-hidden">
+            <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-5 relative overflow-hidden group hover:border-slate-700 transition">
                 <div class="flex items-center justify-between text-slate-400 text-xs font-medium mb-1">
                     <span>AVERAGE TEMP</span>
-                    <i data-lucide="calculator" class="w-4 h-4 text-blue-400"></i>
+                    <i data-lucide="calculator" class="w-4 h-4 text-emerald-400"></i>
                 </div>
                 <div class="flex items-baseline space-x-2">
                     <span class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white" id="statAvg">--</span>
@@ -147,301 +128,268 @@
                 </div>
                 <div class="mt-2 text-xs text-slate-400 flex items-center justify-between">
                     <span>Total Logs: <strong class="text-slate-200" id="statCount">0</strong></span>
+                    <span id="maxLimitBadge" class="hidden text-[10px] font-semibold px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 flex items-center gap-1" title="Dataset capped at 5,000 records. Showing the latest 5,000 samples backwards from most recent.">
+                        <i data-lucide="alert-triangle" class="w-3 h-3"></i> Capped (5k Latest)
+                    </span>
                 </div>
             </div>
 
             <!-- Max Temp Card -->
-            <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-5 relative overflow-hidden">
+            <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-5 relative overflow-hidden group hover:border-slate-700 transition">
                 <div class="flex items-center justify-between text-slate-400 text-xs font-medium mb-1">
-                    <span>MAX TEMPERATURE</span>
-                    <i data-lucide="trending-up" class="w-4 h-4 text-amber-400"></i>
+                    <span>MAX TEMP</span>
+                    <i data-lucide="arrow-up-right" class="w-4 h-4 text-amber-400"></i>
                 </div>
                 <div class="flex items-baseline space-x-2">
-                    <span class="text-3xl sm:text-4xl font-extrabold tracking-tight text-amber-400" id="statMax">--</span>
+                    <span class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white" id="statMax">--</span>
                     <span class="text-sm text-slate-400 font-semibold" id="unitStatMax">°C</span>
                 </div>
-                <div class="mt-2 text-xs text-slate-400 truncate" id="statMaxTime">
-                    Peak recorded
+                <div class="mt-2 text-xs text-slate-400 flex items-center justify-between">
+                    <span>Peak reading</span>
+                    <span class="text-amber-400 font-medium">Highest</span>
                 </div>
             </div>
 
             <!-- Min Temp Card -->
-            <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-5 relative overflow-hidden">
+            <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-5 relative overflow-hidden group hover:border-slate-700 transition">
                 <div class="flex items-center justify-between text-slate-400 text-xs font-medium mb-1">
-                    <span>MIN TEMPERATURE</span>
-                    <i data-lucide="trending-down" class="w-4 h-4 text-cyan-400"></i>
+                    <span>MIN TEMP</span>
+                    <i data-lucide="arrow-down-right" class="w-4 h-4 text-cyan-400"></i>
                 </div>
                 <div class="flex items-baseline space-x-2">
-                    <span class="text-3xl sm:text-4xl font-extrabold tracking-tight text-cyan-400" id="statMin">--</span>
+                    <span class="text-3xl sm:text-4xl font-extrabold tracking-tight text-white" id="statMin">--</span>
                     <span class="text-sm text-slate-400 font-semibold" id="unitStatMin">°C</span>
                 </div>
-                <div class="mt-2 text-xs text-slate-400 truncate" id="statMinTime">
-                    Lowest recorded
+                <div class="mt-2 text-xs text-slate-400 flex items-center justify-between">
+                    <span>Lowest reading</span>
+                    <span class="text-cyan-400 font-medium">Minimum</span>
                 </div>
             </div>
+
         </div>
 
-        <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-6 shadow-xl">
-            <!-- Chart Toolbar -->
-            <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-                <div>
-                    <h2 class="text-lg font-bold text-white flex items-center gap-2">
-                        <span>Temperature Dynamics</span>
-                        <span id="columnBadge" class="text-xs px-2 py-0.5 rounded bg-slate-800 text-slate-400 font-mono border border-slate-700">column: temperature</span>
-                    </h2>
-                    <p class="text-xs text-slate-400">Real-time time-series telemetry visualization</p>
+        <!-- Chart Section -->
+        <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-6 shadow-xl relative">
+            
+            <!-- Chart Header & Controls Toolbar -->
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+                <div class="flex items-center space-x-3">
+                    <div class="p-2 rounded-lg bg-slate-800/80 border border-slate-700">
+                        <i data-lucide="line-chart" class="w-5 h-5 text-blue-400"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-base font-bold text-white">Temperature History</h2>
+                        <p class="text-xs text-slate-400">Realtime telemetry plot over time</p>
+                    </div>
                 </div>
 
+                <!-- Toolbar Options -->
                 <div class="flex flex-wrap items-center gap-2">
-                    <!-- Scale Range Controls -->
-                    <div class="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 p-1 border border-slate-800 text-xs">
-                        <button id="btnAutoScale" class="px-2.5 py-1 rounded-md transition text-slate-400 hover:text-white" title="Toggle Auto Scale Y-Axis">Auto</button>
-                        <div id="manualScaleControls" class="flex items-center gap-1 px-1">
-                            <input type="number" id="inputScaleMin" value="10" step="1" class="w-12 bg-slate-800 border border-slate-700 text-white rounded text-center text-xs py-0.5 focus:outline-none focus:border-emerald-500 font-mono" title="Min Scale Bound">
-                            <span class="text-slate-500 text-[10px]">to</span>
-                            <input type="number" id="inputScaleMax" value="35" step="1" class="w-12 bg-slate-800 border border-slate-700 text-white rounded text-center text-xs py-0.5 focus:outline-none focus:border-emerald-500 font-mono" title="Max Scale Bound">
-                            <span class="text-slate-400 text-[11px] font-semibold pl-0.5" id="scaleUnitLabel">°C</span>
-                        </div>
-                    </div>
+                    
+                    <!-- Line/Bar Mode Toggle -->
+                    <button id="chartTypeBtn" onclick="toggleChartType()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200 flex items-center space-x-1.5">
+                        <i data-lucide="bar-chart-2" class="w-3.5 h-3.5 text-slate-400"></i>
+                        <span>Mode</span>
+                    </button>
 
-                    <!-- Range Selector -->
-                    <div class="inline-flex rounded-lg bg-slate-900 p-1 border border-slate-800 text-xs">
-                        <button data-range="1H" class="range-btn px-3 py-1 rounded-md transition text-slate-400 hover:text-white">1H</button>
-                        <button data-range="24H" class="range-btn px-3 py-1 rounded-md transition text-slate-400 hover:text-white">24H</button>
-                        <button data-range="7D" class="range-btn px-3 py-1 rounded-md transition text-slate-400 hover:text-white">7D</button>
-                        <button data-range="ALL" class="range-btn px-3 py-1 rounded-md transition text-white bg-emerald-600 font-medium">All</button>
-                    </div>
-
-                    <!-- Chart Type Selector -->
-                    <div class="inline-flex rounded-lg bg-slate-900 p-1 border border-slate-800 text-xs">
-                        <button id="btnChartLine" class="px-2.5 py-1 rounded-md bg-slate-800 text-emerald-400 font-medium transition" title="Line Chart">
-                            <i data-lucide="line-chart" class="w-4 h-4"></i>
-                        </button>
-                        <button id="btnChartBar" class="px-2.5 py-1 rounded-md text-slate-400 hover:text-white transition" title="Bar Chart">
-                            <i data-lucide="bar-chart-3" class="w-4 h-4"></i>
-                        </button>
-                    </div>
+                    <!-- Smoothing Control -->
+                    <button id="smoothBtn" onclick="cycleDownsampleSetting()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200 flex items-center space-x-1.5">
+                        <i data-lucide="sliders" class="w-3.5 h-3.5 text-emerald-400"></i>
+                        <span id="smoothText">Smooth: Auto</span>
+                    </button>
 
                     <!-- Gap Break Control -->
-                    <button id="btnGapToggle" class="px-2.5 py-1 rounded-md transition text-slate-400 hover:text-white bg-slate-900 border border-slate-800 text-xs flex items-center gap-1.5" title="Toggle Line Break on Time Gaps">
-                        <i data-lucide="scissors" class="w-3.5 h-3.5 text-slate-400"></i>
-                        <span>Gap Break:</span>
-                        <strong id="gapThresholdLabel" class="text-emerald-400">30m</strong>
+                    <button id="gapBtn" onclick="cycleGapBreakSetting()" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-slate-200 flex items-center space-x-1.5">
+                        <i data-lucide="scissors" class="w-3.5 h-3.5 text-amber-400"></i>
+                        <span id="gapText">Gaps: 1h</span>
                     </button>
 
-                    <!-- Downsample / Smoothing Control -->
-                    <button id="btnDownsampleToggle" class="px-2.5 py-1 rounded-md transition text-slate-400 hover:text-white bg-slate-900 border border-slate-800 text-xs flex items-center gap-1.5" title="Average every X samples to smooth chart and reduce clutter">
-                        <i data-lucide="waves" class="w-3.5 h-3.5 text-slate-400"></i>
-                        <span>Smooth:</span>
-                        <strong id="downsampleLabel" class="text-emerald-400">Auto</strong>
-                    </button>
+                    <!-- Scale Range Controls -->
+                    <div class="flex items-center space-x-1 bg-slate-900 border border-slate-800 rounded-lg p-1 text-xs">
+                        <span class="text-slate-500 font-medium px-1 text-[11px]">Scale:</span>
+                        <input type="number" id="scaleMinInput" value="10" onchange="updateScaleFromInputs()" class="w-11 bg-slate-800 border border-slate-700 rounded text-center text-slate-200 py-0.5 focus:outline-none focus:border-blue-500" placeholder="Min">
+                        <span class="text-slate-600">-</span>
+                        <input type="number" id="scaleMaxInput" value="35" onchange="updateScaleFromInputs()" class="w-11 bg-slate-800 border border-slate-700 rounded text-center text-slate-200 py-0.5 focus:outline-none focus:border-blue-500" placeholder="Max">
+                        <button id="scaleAutoBtn" onclick="toggleAutoScale()" class="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-400">Auto</button>
+                    </div>
 
-                    <!-- Seed Mock Data Button if Table Empty -->
-                    <button id="seedDataBtn" class="px-3 py-1 bg-indigo-600/20 border border-indigo-500/30 hover:bg-indigo-600/30 text-indigo-300 rounded-lg text-xs transition flex items-center gap-1.5">
-                        <i data-lucide="database" class="w-3.5 h-3.5"></i>
-                        <span>Generate Sample Data</span>
-                    </button>
+                    <!-- Time Range Selector -->
+                    <div class="flex items-center bg-slate-900 border border-slate-800 rounded-lg p-1 text-xs">
+                        <button onclick="setTimeRange('1H')" id="rangeBtn1H" class="px-2.5 py-1 rounded-md font-medium text-slate-400 hover:text-white transition">1H</button>
+                        <button onclick="setTimeRange('24H')" id="rangeBtn24H" class="px-2.5 py-1 rounded-md font-medium text-slate-400 hover:text-white transition">24H</button>
+                        <button onclick="setTimeRange('7D')" id="rangeBtn7D" class="px-2.5 py-1 rounded-md font-medium text-slate-400 hover:text-white transition">7D</button>
+                        <button onclick="setTimeRange('ALL')" id="rangeBtnALL" class="px-2.5 py-1 rounded-md font-medium bg-blue-600 text-white shadow-sm transition">ALL</button>
+                    </div>
+
                 </div>
             </div>
 
-            <!-- Canvas Container -->
-            <div class="relative w-full h-[320px] sm:h-[400px]">
-                <canvas id="tempChart"></canvas>
-                <!-- Loading Overlay -->
-                <div id="chartLoader" class="absolute inset-0 bg-cardbg/80 backdrop-blur-sm flex flex-col items-center justify-center space-y-3 z-10 transition-opacity duration-300">
-                    <div class="w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full animate-spin"></div>
-                    <span class="text-xs text-slate-400 font-mono">Fetching telemetry logs...</span>
-                </div>
-                <!-- Empty Data State -->
-                <div id="emptyState" class="hidden absolute inset-0 bg-cardbg/95 flex flex-col items-center justify-center text-center p-6 space-y-3 z-10">
-                    <div class="p-3 bg-slate-800 rounded-full text-slate-400">
-                        <i data-lucide="database-zap" class="w-8 h-8"></i>
-                    </div>
-                    <h3 class="text-base font-semibold text-white">No Temperature Data Found</h3>
-                    <p class="text-xs text-slate-400 max-w-sm">The query executed successfully, but table <code class="text-emerald-400 font-mono">temp_logs</code> returned 0 rows or custom column names need matching.</p>
-                    <div class="flex gap-2 pt-2">
-                        <button id="emptySeedBtn" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-lg transition flex items-center gap-2">
-                            <i data-lucide="sparkles" class="w-4 h-4"></i>
-                            <span>Insert Sample Records</span>
-                        </button>
+            <!-- Chart Canvas Container -->
+            <div class="relative h-72 sm:h-96 w-full mt-4">
+                <canvas id="telemetryChart"></canvas>
+                <div id="chartLoader" class="absolute inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center rounded-xl transition-opacity duration-300">
+                    <div class="flex flex-col items-center space-y-2">
+                        <i data-lucide="loader-2" class="w-8 h-8 text-blue-500 animate-spin"></i>
+                        <span class="text-xs text-slate-300 font-medium">Fetching telemetry dataset...</span>
                     </div>
                 </div>
             </div>
+
         </div>
 
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-
-            <!-- Raw Data Table (Span 2) -->
-            <div class="lg:col-span-2 bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-5 flex flex-col">
-                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                    <div>
-                        <h3 class="font-bold text-base text-white">Temperature Log Records</h3>
-                        <p class="text-xs text-slate-400">Recent entries stored in Supabase table</p>
-                    </div>
-                    <div class="flex items-center gap-2">
-                        <input type="text" id="searchInput" placeholder="Search values or dates..." class="bg-slate-900 border border-slate-800 text-xs text-white rounded-lg px-3 py-1.5 focus:outline-none focus:border-emerald-500 w-full sm:w-48">
-                        <button id="exportCsvBtn" class="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 rounded-lg text-xs transition flex items-center gap-1" title="Export CSV">
-                            <i data-lucide="download" class="w-4 h-4"></i>
-                        </button>
-                    </div>
+        <!-- Data Table Card -->
+        <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-6 shadow-xl">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-800">
+                <div class="flex items-center space-x-2">
+                    <i data-lucide="database" class="w-5 h-5 text-indigo-400"></i>
+                    <h3 class="text-base font-bold text-white">Recent Log Entries</h3>
                 </div>
 
-                <!-- Table View -->
-                <div class="overflow-x-auto flex-1 border border-slate-800/80 rounded-xl">
-                    <table class="w-full text-left text-xs">
-                        <thead class="bg-slate-900/80 text-slate-400 border-b border-slate-800 uppercase font-mono">
-                            <tr>
-                                <th class="py-2.5 px-3">ID</th>
-                                <th class="py-2.5 px-3">Timestamp</th>
-                                <th class="py-2.5 px-3 text-right">Temperature</th>
-                                <th class="py-2.5 px-3 text-center">Status</th>
-                            </tr>
-                        </thead>
-                        <tbody id="logsTableBody" class="divide-y divide-slate-800/60 font-mono">
-                            <tr>
-                                <td colspan="4" class="text-center py-8 text-slate-500">Loading log records...</td>
-                            </tr>
-                        </tbody>
-                    </table>
+                <div class="flex items-center space-x-2">
+                    <div class="relative flex-1 sm:w-64">
+                        <i data-lucide="search" class="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2"></i>
+                        <input type="text" id="searchInput" oninput="renderTable()" placeholder="Search temperature or date..." class="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:border-blue-500">
+                    </div>
+                    <button onclick="exportCSV()" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-medium flex items-center space-x-1.5">
+                        <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                        <span>Export CSV</span>
+                    </button>
+                    <button onclick="seedSampleData()" class="px-3 py-1.5 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/30 text-indigo-300 text-xs font-medium flex items-center space-x-1.5">
+                        <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+                        <span>Seed Sample</span>
+                    </button>
                 </div>
+            </div>
 
-                <!-- Table Footer Pagination/Info -->
-                <div class="mt-3 flex items-center justify-between text-xs text-slate-400 px-1">
+            <!-- Scrollable Table -->
+            <div class="overflow-x-auto mt-4">
+                <table class="w-full text-left text-xs">
+                    <thead>
+                        <tr class="border-b border-slate-800 text-slate-400 font-semibold uppercase tracking-wider">
+                            <th class="py-3 px-4">#</th>
+                            <th class="py-3 px-4">Timestamp</th>
+                            <th class="py-3 px-4">Temperature</th>
+                            <th class="py-3 px-4">Thermal Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logsTableBody" class="divide-y divide-slate-800/60 font-mono text-slate-300">
+                        <tr>
+                            <td colspan="4" class="py-8 text-center text-slate-500">No records loaded.</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Table Footer -->
+            <div class="mt-3 flex items-center justify-between text-xs text-slate-400 px-1">
+                <div class="flex items-center gap-2">
                     <span id="tableCountInfo">Showing 0 logs</span>
-                    <span class="text-slate-500 text-[11px]">Sorted by timestamp descending</span>
+                    <span id="tableMaxWarning" class="hidden text-[11px] text-amber-400 font-medium flex items-center gap-1">
+                        <i data-lucide="alert-circle" class="w-3.5 h-3.5"></i> Capped at 5,000 latest samples (newest first)
+                    </span>
                 </div>
-            </div>
-
-            <!-- Live Stream & Diagnostics (Span 1) -->
-            <div class="bg-cardbg border border-cardborder rounded-2xl p-4 sm:p-5 flex flex-col space-y-4">
-                <div>
-                    <h3 class="font-bold text-base text-white flex items-center justify-between">
-                        <span id="streamTitle">Realtime Stream</span>
-                        <span id="streamIndicator" class="flex h-2 w-2 relative">
-                            <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                            <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                        </span>
-                    </h3>
-                    <p class="text-xs text-slate-400" id="streamSubtext">Postgres changes listener feed</p>
-                </div>
-
-                <!-- Live Stream Feed Box -->
-                <div id="streamFeed" class="bg-slate-950 border border-slate-800 rounded-xl p-3 h-52 overflow-y-auto font-mono text-[11px] space-y-2 text-slate-300">
-                    <div class="text-slate-500 italic">Initializing connection feed...</div>
-                </div>
-
-                <!-- Quick Schema Diagnostic Info -->
-                <div class="bg-slate-900/60 border border-slate-800 rounded-xl p-3 space-y-2 text-xs">
-                    <div class="font-semibold text-slate-300 flex items-center gap-1.5">
-                        <i data-lucide="database" class="w-3.5 h-3.5 text-emerald-400"></i>
-                        <span>Supabase Connection Info</span>
-                    </div>
-                    <div class="grid grid-cols-2 gap-x-2 gap-y-1 text-[11px] font-mono text-slate-400">
-                        <div>Table: <span class="text-slate-200" id="diagTable">temp_logs</span></div>
-                        <div>Temp Col: <span class="text-slate-200" id="diagTempCol">temperature</span></div>
-                        <div>Time Col: <span class="text-slate-200" id="diagTimeCol">created_at</span></div>
-                        <div>Role: <span class="text-emerald-400">service_role</span></div>
-                    </div>
-                </div>
+                <span class="text-slate-500 text-[11px]">Sorted by timestamp descending</span>
             </div>
         </div>
+
+        <!-- Live Activity Stream -->
+        <div class="bg-cardbg border border-cardborder rounded-2xl p-4 text-xs font-mono">
+            <div class="flex items-center justify-between text-slate-400 mb-2 font-sans font-semibold">
+                <span class="flex items-center gap-2">
+                    <i data-lucide="terminal" class="w-4 h-4 text-emerald-400"></i>
+                    System Event Stream
+                </span>
+                <span class="text-[11px] text-slate-500">Auto-Polling / Realtime Active</span>
+            </div>
+            <div id="streamLog" class="h-20 overflow-y-auto bg-slate-950/80 rounded-lg p-2.5 text-slate-400 space-y-1 border border-slate-900">
+                <div>[System] Initializing Telemetry Dashboard...</div>
+            </div>
+        </div>
+
     </main>
 
-    <!-- Modal: Add Log Record -->
-    <div id="addModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div class="bg-cardbg border border-cardborder rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl relative">
-            <button id="closeAddModalBtn" class="absolute top-4 right-4 text-slate-400 hover:text-white">
-                <i data-lucide="x" class="w-5 h-5"></i>
-            </button>
-            
-            <div class="flex items-center space-x-3">
-                <div class="p-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
-                    <i data-lucide="plus-circle" class="w-5 h-5"></i>
-                </div>
-                <div>
-                    <h3 class="font-bold text-lg text-white">Add Temperature Log</h3>
-                    <p class="text-xs text-slate-400">Push a new measurement record to Supabase</p>
-                </div>
+    <!-- Modal: Add Manual Temperature Log -->
+    <div id="addLogModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl relative">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                    <i data-lucide="plus-circle" class="w-5 h-5 text-blue-400"></i>
+                    Log New Temperature
+                </h3>
+                <button onclick="closeModal('addLogModal')" class="text-slate-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
             </div>
 
-            <form id="addLogForm" class="space-y-4 pt-2">
+            <form id="addLogForm" onsubmit="handleManualLogSubmit(event)" class="mt-4 space-y-4">
                 <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Temperature (°C)</label>
-                    <input type="number" step="0.1" id="inputTempValue" required placeholder="e.g. 23.5" class="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500">
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Temperature Value (°C)</label>
+                    <input type="number" step="0.1" id="manualTempInput" required placeholder="e.g. 24.5" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500">
                 </div>
 
                 <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Timestamp</label>
-                    <input type="datetime-local" id="inputTimestamp" class="w-full bg-slate-900 border border-slate-700 text-white rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-emerald-500">
-                    <p class="text-[11px] text-slate-500 mt-1">Leave empty to use current database timestamp.</p>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Timestamp (Optional)</label>
+                    <input type="datetime-local" id="manualTimeInput" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-100 focus:outline-none focus:border-blue-500">
+                    <p class="text-[11px] text-slate-500 mt-1">Leave blank to use current time</p>
                 </div>
 
-                <div class="flex justify-end gap-2 pt-2">
-                    <button type="button" id="cancelAddBtn" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition">Cancel</button>
-                    <button type="submit" id="submitLogBtn" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg text-xs transition flex items-center gap-1">
-                        <i data-lucide="send" class="w-3.5 h-3.5"></i>
-                        <span>Submit Log</span>
-                    </button>
+                <div class="flex justify-end space-x-2 pt-2">
+                    <button type="button" onclick="closeModal('addLogModal')" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300">Cancel</button>
+                    <button type="submit" class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white">Save Record</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- Modal: Settings / Credentials Config -->
-    <div id="settingsModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div class="bg-cardbg border border-cardborder rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl relative">
-            <button id="closeSettingsModalBtn" class="absolute top-4 right-4 text-slate-400 hover:text-white">
-                <i data-lucide="x" class="w-5 h-5"></i>
-            </button>
-            
-            <div class="flex items-center space-x-3">
-                <div class="p-2 bg-blue-500/10 text-blue-400 rounded-xl border border-blue-500/20">
-                    <i data-lucide="sliders" class="w-5 h-5"></i>
-                </div>
-                <div>
-                    <h3 class="font-bold text-lg text-white">Database & Column Settings</h3>
-                    <p class="text-xs text-slate-400">Configure Supabase endpoint and table mapping</p>
-                </div>
+    <!-- Modal: Supabase Settings -->
+    <div id="settingsModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl relative">
+            <div class="flex items-center justify-between pb-4 border-b border-slate-800">
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                    <i data-lucide="settings" class="w-5 h-5 text-indigo-400"></i>
+                    Supabase Configuration
+                </h3>
+                <button onclick="closeModal('settingsModal')" class="text-slate-400 hover:text-white">
+                    <i data-lucide="x" class="w-5 h-5"></i>
+                </button>
             </div>
 
-            <form id="settingsForm" class="space-y-3 pt-2">
+            <form id="settingsForm" onsubmit="handleSettingsSubmit(event)" class="mt-4 space-y-3">
                 <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">Supabase URL</label>
-                    <input type="text" id="cfgUrl" required class="w-full bg-slate-900 border border-slate-700 text-white font-mono text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500">
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Supabase URL</label>
+                    <input type="text" id="cfgUrl" required class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500 font-mono">
                 </div>
 
                 <div>
-                    <label class="block text-xs font-medium text-slate-300 mb-1">API Key (Service Role / Anon Key)</label>
-                    <input type="password" id="cfgKey" required class="w-full bg-slate-900 border border-slate-700 text-white font-mono text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500">
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Supabase API Key (Anon / Service Role)</label>
+                    <input type="password" id="cfgKey" required class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500 font-mono">
                 </div>
 
-                <div class="grid grid-cols-3 gap-3">
+                <div class="grid grid-cols-3 gap-2">
                     <div>
-                        <label class="block text-xs font-medium text-slate-300 mb-1">Table Name</label>
-                        <input type="text" id="cfgTable" required class="w-full bg-slate-900 border border-slate-700 text-white font-mono text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500">
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">Table</label>
+                        <input type="text" id="cfgTable" required class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500 font-mono">
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-slate-300 mb-1">Temp Column</label>
-                        <input type="text" id="cfgTempCol" required class="w-full bg-slate-900 border border-slate-700 text-white font-mono text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500">
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">Temp Col</label>
+                        <input type="text" id="cfgTempCol" required class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500 font-mono">
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-slate-300 mb-1">Time Column</label>
-                        <input type="text" id="cfgTimeCol" required class="w-full bg-slate-900 border border-slate-700 text-white font-mono text-xs rounded-lg px-3 py-2 focus:outline-none focus:border-blue-500">
+                        <label class="block text-xs font-semibold text-slate-300 mb-1">Time Col</label>
+                        <input type="text" id="cfgTimeCol" required class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-xs text-slate-100 focus:outline-none focus:border-blue-500 font-mono">
                     </div>
                 </div>
 
-                <div class="flex justify-between items-center pt-3 border-t border-slate-800">
-                    <button type="button" id="resetConfigBtn" class="text-xs text-amber-400 hover:text-amber-300 flex items-center gap-1">
-                        <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i> Reset Defaults
-                    </button>
-                    <div class="flex gap-2">
-                        <button type="button" id="cancelSettingsBtn" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition">Cancel</button>
-                        <button type="submit" class="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg text-xs transition">Save & Reconnect</button>
-                    </div>
+                <div class="flex justify-end space-x-2 pt-3">
+                    <button type="button" onclick="closeModal('settingsModal')" class="px-4 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-300">Cancel</button>
+                    <button type="submit" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white">Save & Reconnect</button>
                 </div>
             </form>
         </div>
     </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="fixed bottom-5 right-5 z-50 flex flex-col space-y-2 pointer-events-none"></div>
 
     <script>
         // Catch sandbox WebSocket SecurityErrors globally to prevent app execution interruption
@@ -468,226 +416,62 @@
             timeColumn: 'created_at'
         };
 
+        const MAX_SAMPLES_LIMIT = 5000;
+
         // Application State
         let config = { ...DEFAULT_CONFIG };
         let supabaseClient = null;
-        let realtimeSubscription = null;
-        let pollingInterval = null;
-        let isPollingMode = false;
         let rawLogsData = [];
-        let filteredLogsData = [];
-        let temperatureChart = null;
+        let chartInstance = null;
+        
         let currentUnit = 'C'; // 'C' or 'F'
-        let currentTimeRange = 'ALL'; // '1H', '24H', '7D', 'ALL'
-        let currentChartType = 'line'; // 'line' or 'bar'
-        let isAutoScale = false; // Default false so fixed scale applies
-        let scaleMin = 10; // Default min in °C
-        let scaleMax = 35; // Default max in °C
-        let breakGaps = true; // Break line when large time gaps occur
-        let gapThresholdMinutes = 30; // Threshold in minutes for breaking gap
-        let downsampleSetting = 'auto'; // Default 'auto', 'off', 5, 10, 25, 50
-
-        // Initialize Lucide icons
-        lucide.createIcons();
-
-        // Color helper to determine point-specific temperature colors (Warm, Normal, Cool)
-        function getTempColor(val, alpha = 1) {
-            if (val === undefined || val === null || isNaN(Number(val))) return `rgba(16, 185, 129, ${alpha})`;
-            const numVal = Number(val);
-            const valC = currentUnit === 'F' ? (numVal - 32) * 5/9 : numVal;
-            if (valC > 28) return `rgba(245, 158, 11, ${alpha})`; // High (>28°C): Warm Amber
-            if (valC < 15) return `rgba(6, 182, 212, ${alpha})`;  // Low (<15°C): Cool Cyan
-            return `rgba(16, 185, 129, ${alpha})`;               // Normal (15-28°C): Emerald Green
-        }
-
-        function initChart() {
-            const ctx = document.getElementById('tempChart').getContext('2d');
-
-            temperatureChart = new Chart(ctx, {
-                type: currentChartType,
-                data: {
-                    datasets: [{
-                        label: 'Temperature',
-                        data: [],
-                        borderColor: '#10b981',
-                        borderWidth: 2.5,
-                        backgroundColor: 'rgba(16, 185, 129, 0.12)',
-                        fill: true,
-                        tension: 0.3,
-                        spanGaps: false,
-                        pointBackgroundColor: function(context) {
-                            const raw = context ? context.raw : null;
-                            const val = raw && typeof raw === 'object' ? raw.y : raw;
-                            if (val === null || val === undefined) return 'transparent';
-                            return getTempColor(val, 1);
-                        },
-                        pointHoverBackgroundColor: function(context) {
-                            const raw = context ? context.raw : null;
-                            const val = raw && typeof raw === 'object' ? raw.y : raw;
-                            if (val === null || val === undefined) return 'transparent';
-                            return getTempColor(val, 1);
-                        },
-                        pointBorderColor: '#0b0f19',
-                        pointBorderWidth: 2,
-                        pointRadius: function(context) {
-                            const raw = context ? context.raw : null;
-                            const val = raw && typeof raw === 'object' ? raw.y : raw;
-                            if (val === null || val === undefined) return 0;
-                            const total = context.dataset.data.length;
-                            return total > 1000 ? 2 : 5;
-                        },
-                        pointHoverRadius: function(context) {
-                            const raw = context ? context.raw : null;
-                            const val = raw && typeof raw === 'object' ? raw.y : raw;
-                            if (val === null || val === undefined) return 0;
-                            const total = context.dataset.data.length;
-                            return total > 1000 ? 5 : 8;
-                        },
-                        pointHoverBorderColor: '#ffffff',
-                        pointHoverBorderWidth: 2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    interaction: {
-                        mode: 'nearest',
-                        intersect: false,
-                        axis: 'x'
-                    },
-                    plugins: {
-                        legend: { display: false },
-                        tooltip: {
-                            backgroundColor: '#111827',
-                            titleColor: '#9ca3af',
-                            bodyColor: '#f3f4f6',
-                            borderColor: '#374151',
-                            borderWidth: 1,
-                            padding: 12,
-                            displayColors: true,
-                            boxWidth: 8,
-                            boxHeight: 8,
-                            usePointStyle: true,
-                            filter: function(tooltipItem) {
-                                const raw = tooltipItem.raw;
-                                const val = raw && typeof raw === 'object' ? raw.y : raw;
-                                return val !== null && val !== undefined;
-                            },
-                            callbacks: {
-                                title: function(context) {
-                                    if (!context || !context.length) return '';
-                                    const item = context[0];
-                                    const raw = item.raw;
-                                    const timeVal = raw && typeof raw === 'object' ? raw.x : item.parsed.x;
-                                    if (!timeVal) return '';
-                                    const d = new Date(timeVal);
-                                    if (isNaN(d.getTime())) return '';
-                                    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                                },
-                                label: function(context) {
-                                    const raw = context.raw;
-                                    const val = raw && typeof raw === 'object' ? raw.y : context.parsed.y;
-                                    if (val === null || val === undefined) return '';
-                                    const numVal = Number(val);
-                                    const valC = currentUnit === 'F' ? (numVal - 32) * 5/9 : numVal;
-                                    let status = 'Normal';
-                                    if (valC > 28) status = 'Warm';
-                                    if (valC < 15) status = 'Cool';
-                                    return ` Temp: ${numVal.toFixed(1)}°${currentUnit} (${status})`;
-                                },
-                                labelColor: function(context) {
-                                    const raw = context.raw;
-                                    const val = raw && typeof raw === 'object' ? raw.y : context.parsed.y;
-                                    const color = getTempColor(val, 1);
-                                    return {
-                                        borderColor: color,
-                                        backgroundColor: color
-                                    };
-                                }
-                            }
-                        }
-                    },
-                    scales: {
-                        x: {
-                            type: 'linear',
-                            grid: { color: 'rgba(255, 255, 255, 0.04)' },
-                            ticks: {
-                                color: '#94a3b8',
-                                font: { size: 10, family: 'monospace' },
-                                maxRotation: 0,
-                                callback: function(value) {
-                                    const d = new Date(value);
-                                    if (isNaN(d.getTime())) return '';
-                                    
-                                    const scale = this;
-                                    const minVal = scale.min || 0;
-                                    const maxVal = scale.max || 0;
-                                    const spanMs = maxVal - minVal;
-
-                                    if (spanMs > 24 * 3600 * 1000) {
-                                        return d.toLocaleDateString([], { month: 'numeric', day: 'numeric' }) + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                                    }
-                                    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                                }
-                            }
-                        },
-                        y: {
-                            grid: { color: 'rgba(255, 255, 255, 0.06)' },
-                            ticks: {
-                                color: '#94a3b8',
-                                font: { size: 10, family: 'monospace' },
-                                callback: function(value) {
-                                    return value + '°' + currentUnit;
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        }
+        let chartType = 'line'; // 'line' or 'bar'
+        let timeRange = 'ALL'; // '1H', '24H', '7D', 'ALL'
+        let downsampleSetting = 'auto'; // 'auto', 'off', '5', '10', '25', '50'
+        let gapBreakMinutes = 60; // 30, 60, 180, 0
+        
+        let yScaleMin = 10;
+        let yScaleMax = 35;
+        let yScaleAuto = false;
+        
+        let isWebSocketAllowed = true;
+        let pollIntervalId = null;
 
         function initSupabase() {
             try {
-                // Read from localStorage if saved earlier
-                const savedConfig = localStorage.getItem('supa_temp_cfg');
-                if (savedConfig) {
-                    try { config = JSON.parse(savedConfig); } catch(e){}
-                }
-
-                updateUIConfigText();
-
-                // Clear any existing polling loop
-                if (pollingInterval) {
-                    clearInterval(pollingInterval);
-                    pollingInterval = null;
-                }
-
-                // Create Supabase client
                 const { createClient } = window.supabase;
-                supabaseClient = createClient(config.url, config.key, {
-                    auth: { persistSession: false },
-                    realtime: { timeout: 5000 }
-                });
-
-                updateStatus('connecting', 'Connecting to Supabase...');
-                
-                // Fetch initial logs first, then attempt realtime / fallback polling
-                fetchLogs().then(() => {
-                    setupRealtimeSubscription();
-                });
+                supabaseClient = createClient(config.url, config.key);
+                logStreamMessage(`Connected to Supabase endpoint: ${config.url}`);
+                updateStatus('online', 'Connected');
             } catch (err) {
                 console.error('Supabase init error:', err);
-                updateStatus('error', 'Init failed');
-                showToast('Failed to initialize Supabase client: ' + err.message, 'error');
+                logStreamMessage(`Connection Error: ${err.message}`);
+                updateStatus('error', 'Configuration Error');
             }
         }
 
-        function updateUIConfigText() {
-            document.getElementById('supaUrlDisplay').innerText = config.url.replace(/^https?:\/\//, '');
-            document.getElementById('columnBadge').innerText = `table: ${config.tableName} | temp: ${config.tempColumn}`;
-            document.getElementById('diagTable').innerText = config.tableName;
-            document.getElementById('diagTempCol').innerText = config.tempColumn;
-            document.getElementById('diagTimeCol').innerText = config.timeColumn;
+        // Auto-detect schema column names if standard schema is slightly different
+        function detectAndAdaptColumns(row) {
+            if (!row) return;
+            const keys = Object.keys(row);
+            
+            // Temperature column detection
+            if (!row.hasOwnProperty(config.tempColumn)) {
+                const tempCandidate = keys.find(k => k.toLowerCase().includes('temp') || k.toLowerCase().includes('val') || k.toLowerCase().includes('deg'));
+                if (tempCandidate) {
+                    config.tempColumn = tempCandidate;
+                    logStreamMessage(`Auto-detected temperature column: '${tempCandidate}'`);
+                }
+            }
+
+            // Timestamp column detection
+            if (!row.hasOwnProperty(config.timeColumn)) {
+                const timeCandidate = keys.find(k => k.toLowerCase().includes('time') || k.toLowerCase().includes('date') || k.toLowerCase().includes('created'));
+                if (timeCandidate) {
+                    config.timeColumn = timeCandidate;
+                    logStreamMessage(`Auto-detected timestamp column: '${timeCandidate}'`);
+                }
+            }
         }
 
         async function fetchLogs(isSilent = false) {
@@ -697,36 +481,66 @@
             }
 
             try {
-                // Fetch up to 5,000 records ordered by timestamp
-                const { data, error } = await supabaseClient
-                    .from(config.tableName)
-                    .select('*')
-                    .order(config.timeColumn, { ascending: true })
-                    .limit(5000);
+                // Fetch in paginated 1,000-row batches to bypass PostgREST's default server-side 1,000 row cap
+                const BATCH_SIZE = 1000;
+                let fetchedRecords = [];
 
-                if (error) {
-                    if (error.message && error.message.includes("column")) {
-                        if (!isSilent) showToast(`Query error: ${error.message}. Check Settings for column names.`, 'error');
+                for (let offset = 0; offset < MAX_SAMPLES_LIMIT; offset += BATCH_SIZE) {
+                    const fetchAmount = Math.min(BATCH_SIZE, MAX_SAMPLES_LIMIT - offset);
+                    const { data, error } = await supabaseClient
+                        .from(config.tableName)
+                        .select('*')
+                        .order(config.timeColumn, { ascending: false })
+                        .range(offset, offset + fetchAmount - 1);
+
+                    if (error) {
+                        if (offset === 0) {
+                            if (error.message && error.message.includes("column")) {
+                                if (!isSilent) showToast(`Query error: ${error.message}. Check Settings for column names.`, 'error');
+                            } else {
+                                if (!isSilent) showToast(`Supabase Error: ${error.message}`, 'error');
+                            }
+                            updateStatus('error', 'Database Error');
+                            rawLogsData = [];
+                            processAndUpdateDashboard();
+                            return;
+                        } else {
+                            break;
+                        }
+                    }
+
+                    if (data && data.length > 0) {
+                        fetchedRecords = fetchedRecords.concat(data);
+                        // Stop paginating if fewer records than requested were returned
+                        if (data.length < fetchAmount) break;
                     } else {
-                        if (!isSilent) showToast(`Supabase Error: ${error.message}`, 'error');
+                        break;
                     }
-                    updateStatus('error', 'Database Error');
-                    rawLogsData = [];
-                } else {
-                    const prevCount = rawLogsData.length;
-                    rawLogsData = data || [];
-                    
-                    // Auto-detect columns if rawLogsData has items but schema differs
-                    if (rawLogsData.length > 0) {
-                        detectAndAdaptColumns(rawLogsData[0]);
-                    }
+                }
 
-                    updateStatus('online', `Connected (${rawLogsData.length} records)`);
-                    
-                    if (isSilent && rawLogsData.length > prevCount) {
-                        logStreamMessage(`🔄 Polled ${rawLogsData.length - prevCount} new record(s)`);
-                    } else if (!isSilent) {
-                        logStreamMessage(`Fetched ${rawLogsData.length} entries from ${config.tableName}`);
+                const prevCount = rawLogsData.length;
+                
+                // Reverse the array so chronology runs past -> present (left-to-right) on the chart,
+                // strictly anchoring the right edge at the most recent sample.
+                rawLogsData = fetchedRecords.reverse();
+                
+                // Auto-detect columns if rawLogsData has items but schema differs
+                if (rawLogsData.length > 0) {
+                    detectAndAdaptColumns(rawLogsData[0]);
+                }
+
+                // Check if query reached maximum sample capacity
+                const isMaxCapReached = rawLogsData.length >= MAX_SAMPLES_LIMIT;
+                updateMaxLimitUI(isMaxCapReached);
+
+                updateStatus('online', `Connected (${rawLogsData.length} records)`);
+                
+                if (isSilent && rawLogsData.length > prevCount) {
+                    logStreamMessage(`🔄 Polled ${rawLogsData.length - prevCount} new record(s) backwards from latest sample`);
+                } else if (!isSilent) {
+                    logStreamMessage(`Fetched latest ${rawLogsData.length} entries from ${config.tableName} (ordered backwards from newest sample)`);
+                    if (isMaxCapReached) {
+                        showToast(`⚠️ Capped at 5,000 records. Displaying latest 5,000 samples backwards from current time.`, 'info');
                     }
                 }
 
@@ -744,427 +558,357 @@
             }
         }
 
-        function detectAndAdaptColumns(sampleRecord) {
-            const keys = Object.keys(sampleRecord);
-            
-            // Check if user's configured tempColumn exists
-            if (sampleRecord[config.tempColumn] === undefined) {
-                // Search for potential candidate keys
-                const tempCandidate = keys.find(k => 
-                    /temp|val|deg|celsius|reading|number/i.test(k) || typeof sampleRecord[k] === 'number'
-                );
-                if (tempCandidate) {
-                    config.tempColumn = tempCandidate;
-                    showToast(`Auto-detected temperature column: "${tempCandidate}"`, 'info');
-                }
-            }
-
-            // Check time column
-            if (sampleRecord[config.timeColumn] === undefined) {
-                const timeCandidate = keys.find(k => 
-                    /created|time|date|at|stamp/i.test(k)
-                );
-                if (timeCandidate) {
-                    config.timeColumn = timeCandidate;
-                    showToast(`Auto-detected timestamp column: "${timeCandidate}"`, 'info');
-                }
-            }
-
-            updateUIConfigText();
-        }
-
-        function isWebSocketAllowed() {
-            try {
-                if (typeof WebSocket === 'undefined') return false;
-                // In Canvas or sandboxed iframe containers (e.g. *.usercontent.goog), WebSockets throw SecurityError by host policy
-                if (window.self !== window.top || window.location.hostname.includes('usercontent.goog') || window.location.hostname.includes('scf.')) {
-                    return false;
-                }
-                return true;
-            } catch (e) {
-                return false;
-            }
-        }
-
         function setupRealtimeSubscription() {
-            // Clean up existing subscription safely
-            if (realtimeSubscription) {
-                try {
-                    supabaseClient.removeChannel(realtimeSubscription);
-                } catch (e) {}
-                realtimeSubscription = null;
-            }
-
-            // Check if WebSockets are allowed in the host environment before attempting instantiation
-            if (!isWebSocketAllowed()) {
-                enablePollingFallback("Canvas/Iframe sandbox detected. Activated safe Auto-Polling (10s).");
+            // Environment check for sandboxed canvas WebSocket restrictions
+            try {
+                const testSocket = new WebSocket('wss://echo.websocket.org');
+                testSocket.close();
+            } catch (e) {
+                isWebSocketAllowed = false;
+                logStreamMessage('Sandbox detected WebSocket restrictions. Activating Auto-Polling (10s).');
+                startPolling();
                 return;
             }
 
             try {
-                logStreamMessage("Connecting Realtime WebSocket channel...");
-
-                realtimeSubscription = supabaseClient.channel('temp_logs_channel');
-
-                realtimeSubscription
+                const channel = supabaseClient
+                    .channel('schema-db-changes')
                     .on(
                         'postgres_changes',
                         { event: 'INSERT', schema: 'public', table: config.tableName },
                         (payload) => {
-                            logStreamMessage(`⚡ NEW RECORD: ${JSON.stringify(payload.new)}`);
-                            showToast(`New temperature reading: ${payload.new[config.tempColumn]}°C`, 'success');
-                            
-                            rawLogsData.push(payload.new);
-                            processAndUpdateDashboard();
+                            logStreamMessage('⚡ Realtime INSERT received!');
+                            if (payload.new) {
+                                rawLogsData.push(payload.new);
+                                if (rawLogsData.length > MAX_SAMPLES_LIMIT) {
+                                    rawLogsData.shift(); // keep capped
+                                }
+                                processAndUpdateDashboard();
+                                showToast(`New Temperature Logged: ${payload.new[config.tempColumn]}°C`, 'success');
+                            }
                         }
                     )
                     .subscribe((status, err) => {
                         if (status === 'SUBSCRIBED') {
-                            isPollingMode = false;
-                            logStreamMessage(`Connected! Subscribed to table [${config.tableName}]`);
-                            updateStreamUI('Realtime Stream', 'Postgres changes listener feed', true);
-                        } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED' || err) {
-                            console.warn('Realtime channel issue status:', status, err);
-                            enablePollingFallback(`Realtime status: ${status}. Switched to Auto-Polling.`);
+                            logStreamMessage('Realtime Postgres listener active');
+                        } else if (status === 'CHANNEL_ERROR' || err) {
+                            logStreamMessage('Realtime Channel Error. Switching to polling mode.');
+                            startPolling();
                         }
                     });
-
             } catch (e) {
-                console.warn('WebSocket restriction encountered:', e);
-                enablePollingFallback(`Sandbox restricted WebSockets. Switched to Auto-Polling.`);
+                logStreamMessage('Realtime setup error. Fallback to polling.');
+                startPolling();
             }
         }
 
-        function enablePollingFallback(reason) {
-            if (isPollingMode) return;
-            isPollingMode = true;
-
-            logStreamMessage(`⚠️ ${reason}`);
-            logStreamMessage(`📡 Auto-polling active (Interval: 10s)`);
-
-            updateStreamUI('Auto-Polling Feed', 'Polling table every 10s (Sandbox safe)', false);
-
-            if (!pollingInterval) {
-                pollingInterval = setInterval(() => {
-                    fetchLogs(true); // Silent background fetch
-                }, 10000);
-            }
-        }
-
-        function updateStreamUI(titleText, subtext, isRealtime) {
-            document.getElementById('streamTitle').innerText = titleText;
-            document.getElementById('streamSubtext').innerText = subtext;
-            
-            const indicator = document.getElementById('streamIndicator');
-            if (isRealtime) {
-                indicator.innerHTML = `
-                    <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                `;
-            } else {
-                indicator.innerHTML = `
-                    <span class="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                    <span class="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
-                `;
-            }
+        function startPolling() {
+            if (pollIntervalId) clearInterval(pollIntervalId);
+            pollIntervalId = setInterval(() => {
+                fetchLogs(true);
+            }, 10000);
         }
 
         function processAndUpdateDashboard() {
-            // Apply Time Range Filter
-            filteredLogsData = filterDataByTimeRange(rawLogsData, currentTimeRange);
-
-            const emptyStateEl = document.getElementById('emptyState');
-            if (!filteredLogsData || filteredLogsData.length === 0) {
-                emptyStateEl.classList.remove('hidden');
+            if (!rawLogsData || rawLogsData.length === 0) {
                 resetKPICards();
-                renderTable([]);
                 updateChart([]);
+                renderTable([]);
                 return;
-            } else {
-                emptyStateEl.classList.add('hidden');
             }
 
-            // Extract numeric values & calculate stats
-            const tempsC = filteredLogsData.map(d => Number(d[config.tempColumn]) || 0);
-            const tempsConverted = tempsC.map(val => convertTemp(val));
-            
-            const currentVal = tempsConverted[tempsConverted.length - 1];
-            const maxVal = Math.max(...tempsConverted);
-            const minVal = Math.min(...tempsConverted);
-            const sumVal = tempsConverted.reduce((a, b) => a + b, 0);
-            const avgVal = sumVal / tempsConverted.length;
+            // Standardize dataset into array of objects: { tempC, timestamp, rawRow }
+            const parsedData = rawLogsData.map(row => {
+                const val = parseFloat(row[config.tempColumn]);
+                const rawTime = row[config.timeColumn];
+                const ts = rawTime ? new Date(rawTime).getTime() : Date.now();
+                return {
+                    tempC: isNaN(val) ? 0 : val,
+                    timestamp: isNaN(ts) ? Date.now() : ts,
+                    rawRow: row
+                };
+            }).filter(item => !isNaN(item.timestamp));
 
-            const maxIndex = tempsConverted.indexOf(maxVal);
-            const minIndex = tempsConverted.indexOf(minVal);
+            // Sort chronological
+            parsedData.sort((a, b) => a.timestamp - b.timestamp);
 
-            // Update Metric Cards
-            document.getElementById('statCurrent').innerText = currentVal.toFixed(1);
-            document.getElementById('statAvg').innerText = avgVal.toFixed(1);
-            document.getElementById('statMax').innerText = maxVal.toFixed(1);
-            document.getElementById('statMin').innerText = minVal.toFixed(1);
-            document.getElementById('statCount').innerText = filteredLogsData.length;
+            // Filter by time range
+            const filteredData = filterDataByTimeRange(parsedData, timeRange);
 
-            // Timestamp formatting
-            const lastRecord = filteredLogsData[filteredLogsData.length - 1];
-            const lastTimeStr = formatTime(lastRecord[config.timeColumn]);
-            document.getElementById('statTimestamp').innerHTML = `<i data-lucide="clock" class="w-3.5 h-3.5 text-emerald-400"></i> Updated ${lastTimeStr}`;
-            
-            if (maxIndex >= 0) {
-                document.getElementById('statMaxTime').innerText = `At ${formatTime(filteredLogsData[maxIndex][config.timeColumn])}`;
-            }
-            if (minIndex >= 0) {
-                document.getElementById('statMinTime').innerText = `At ${formatTime(filteredLogsData[minIndex][config.timeColumn])}`;
-            }
+            // Downsample / Smooth
+            const smoothedData = downsampleData(filteredData);
 
-            // Build time-proportional chart data points with gap handling & mean downsampling
-            const chartDataPoints = [];
-            const gapThresholdMs = gapThresholdMinutes * 60 * 1000;
+            // Update Chart and KPIs
+            updateChart(smoothedData);
+            updateKPIs(parsedData);
+            renderTable(parsedData);
+        }
 
-            // Determine downsample chunk step size
-            let step = 1;
+        function filterDataByTimeRange(data, range) {
+            if (!data || data.length === 0 || range === 'ALL') return data;
+            const latestTs = data[data.length - 1].timestamp;
+            let durationMs = 0;
+
+            if (range === '1H') durationMs = 3600 * 1000;
+            else if (range === '24H') durationMs = 24 * 3600 * 1000;
+            else if (range === '7D') durationMs = 7 * 24 * 3600 * 1000;
+
+            const cutoffTs = latestTs - durationMs;
+            return data.filter(item => item.timestamp >= cutoffTs);
+        }
+
+        function downsampleData(data) {
+            if (!data || data.length === 0) return [];
+            if (downsampleSetting === 'off') return data;
+
+            let bucketSize = 1;
             if (downsampleSetting === 'auto') {
-                const total = filteredLogsData.length;
-                if (total > 3000) step = 50;
-                else if (total > 1500) step = 25;
-                else if (total > 500) step = 10;
-                else if (total > 150) step = 5;
-                else step = 1;
-            } else if (downsampleSetting !== 'off') {
-                step = parseInt(downsampleSetting) || 1;
+                if (data.length > 3000) bucketSize = 25;
+                else if (data.length > 1500) bucketSize = 15;
+                else if (data.length > 500) bucketSize = 10;
+                else if (data.length > 150) bucketSize = 5;
+                else bucketSize = 1;
+            } else {
+                bucketSize = parseInt(downsampleSetting, 10) || 1;
             }
 
-            let currentChunk = [];
+            if (bucketSize <= 1) return data;
 
-            const flushChunk = () => {
-                if (currentChunk.length === 0) return;
-                const sumX = currentChunk.reduce((acc, p) => acc + p.timeMs, 0);
-                const sumY = currentChunk.reduce((acc, p) => acc + p.tempVal, 0);
-                chartDataPoints.push({
-                    x: Math.round(sumX / currentChunk.length),
-                    y: sumY / currentChunk.length
-                });
-                currentChunk = [];
+            const result = [];
+            let currentBucket = [];
+
+            for (let i = 0; i < data.length; i++) {
+                const point = data[i];
+                if (currentBucket.length > 0) {
+                    const prevPoint = currentBucket[currentBucket.length - 1];
+                    const gapMs = point.timestamp - prevPoint.timestamp;
+                    if (gapBreakMinutes > 0 && gapMs > gapBreakMinutes * 60 * 1000) {
+                        result.push(averageBucket(currentBucket));
+                        currentBucket = [];
+                    }
+                }
+                currentBucket.push(point);
+                if (currentBucket.length >= bucketSize) {
+                    result.push(averageBucket(currentBucket));
+                    currentBucket = [];
+                }
+            }
+            if (currentBucket.length > 0) {
+                result.push(averageBucket(currentBucket));
+            }
+            return result;
+        }
+
+        function averageBucket(bucket) {
+            if (bucket.length === 1) return bucket[0];
+            const sumTemp = bucket.reduce((acc, p) => acc + p.tempC, 0);
+            const avgTemp = sumTemp / bucket.length;
+            const midIdx = Math.floor(bucket.length / 2);
+            return {
+                ...bucket[midIdx],
+                tempC: Math.round(avgTemp * 100) / 100,
+                timestamp: bucket[midIdx].timestamp,
+                isAveraged: true,
+                sampleCount: bucket.length
             };
+        }
 
-            for (let i = 0; i < filteredLogsData.length; i++) {
-                const item = filteredLogsData[i];
-                const timeMs = new Date(item[config.timeColumn]).getTime();
-                const tempC = Number(item[config.tempColumn]) || 0;
-                const tempVal = convertTemp(tempC);
+        function getThermalColor(tempC) {
+            if (tempC >= 28) return '#f59e0b'; // Amber (Warm)
+            if (tempC <= 15) return '#06b6d4'; // Cyan (Cool)
+            return '#10b981'; // Emerald (Normal)
+        }
 
-                if (isNaN(timeMs)) continue;
+        function initChart() {
+            const ctx = document.getElementById('telemetryChart').getContext('2d');
+            
+            chartInstance = new Chart(ctx, {
+                type: chartType,
+                data: {
+                    datasets: [{
+                        label: 'Temperature',
+                        data: [],
+                        borderColor: '#3b82f6',
+                        borderWidth: 2,
+                        tension: 0.35,
+                        fill: true,
+                        pointRadius: (ctx) => {
+                            const raw = ctx.raw;
+                            if (!raw || raw.y === null) return 0;
+                            return (ctx.chart.data.datasets[0].data.length > 800) ? 1.5 : 3;
+                        },
+                        pointHoverRadius: 6,
+                        pointBackgroundColor: (ctx) => {
+                            const raw = ctx.raw;
+                            if (!raw || raw.rawTempC === undefined) return '#3b82f6';
+                            return getThermalColor(raw.rawTempC);
+                        },
+                        pointBorderColor: '#0f172a',
+                        pointBorderWidth: 1.5,
+                        backgroundColor: (context) => {
+                            const chart = context.chart;
+                            const { ctx, chartArea } = chart;
+                            if (!chartArea) return 'rgba(59, 130, 246, 0.1)';
+                            const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+                            gradient.addColorStop(0, 'rgba(245, 158, 11, 0.25)'); // Amber
+                            gradient.addColorStop(0.5, 'rgba(16, 185, 129, 0.15)'); // Emerald
+                            gradient.addColorStop(1, 'rgba(6, 182, 212, 0.02)'); // Cyan
+                            return gradient;
+                        }
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    animation: { duration: 400 },
+                    interaction: { mode: 'nearest', intersect: false },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            backgroundColor: '#0f172a',
+                            borderColor: '#334155',
+                            borderWidth: 1,
+                            titleColor: '#94a3b8',
+                            bodyColor: '#ffffff',
+                            padding: 10,
+                            displayColors: false,
+                            callbacks: {
+                                label: (context) => {
+                                    const raw = context.raw;
+                                    if (!raw || raw.y === null) return '';
+                                    const unitStr = currentUnit === 'F' ? '°F' : '°C';
+                                    let label = `Temperature: ${raw.y}${unitStr}`;
+                                    if (raw.isAveraged) {
+                                        label += ` (Avg of ${raw.sampleCount} pts)`;
+                                    }
+                                    return label;
+                                },
+                                title: (items) => {
+                                    if (!items.length) return '';
+                                    const date = new Date(items[0].raw.x);
+                                    return date.toLocaleString();
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'linear',
+                            grid: { color: 'rgba(30, 41, 59, 0.5)' },
+                            ticks: {
+                                color: '#64748b',
+                                maxRotation: 0,
+                                callback: (val) => {
+                                    const d = new Date(val);
+                                    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+                                }
+                            }
+                        },
+                        y: {
+                            grid: { color: 'rgba(30, 41, 59, 0.5)' },
+                            ticks: {
+                                color: '#64748b',
+                                callback: (val) => `${val}°${currentUnit}`
+                            }
+                        }
+                    }
+                }
+            });
+        }
 
-                if (breakGaps && gapThresholdMinutes > 0 && i > 0) {
-                    const prevTimeMs = new Date(filteredLogsData[i - 1][config.timeColumn]).getTime();
-                    if (!isNaN(prevTimeMs) && (timeMs - prevTimeMs) > gapThresholdMs) {
-                        // Flush accumulated chunk before inserting gap break
-                        flushChunk();
-                        // Inject null point immediately after previous timestamp to break line
-                        chartDataPoints.push({
-                            x: prevTimeMs + 1000,
-                            y: null
+        function updateChart(data) {
+            if (!chartInstance) initChart();
+
+            // Format data points with gap handling
+            const chartPoints = [];
+            const maxGapMs = gapBreakMinutes * 60 * 1000;
+
+            for (let i = 0; i < data.length; i++) {
+                const pt = data[i];
+                if (i > 0 && gapBreakMinutes > 0) {
+                    const prevPt = data[i - 1];
+                    if (pt.timestamp - prevPt.timestamp > maxGapMs) {
+                        chartPoints.push({
+                            x: prevPt.timestamp + 1,
+                            y: null,
+                            rawTempC: null
                         });
                     }
                 }
 
-                if (step === 1) {
-                    chartDataPoints.push({ x: timeMs, y: tempVal });
-                } else {
-                    currentChunk.push({ timeMs, tempVal });
-                    if (currentChunk.length >= step) {
-                        flushChunk();
-                    }
-                }
-            }
-            
-            // Flush remaining trailing chunk
-            if (step > 1) {
-                flushChunk();
-            }
-
-            // Update Chart
-            updateChart(chartDataPoints);
-
-            // Update Table
-            renderTable(filteredLogsData);
-
-            lucide.createIcons();
-        }
-
-        function updateChart(chartDataPoints) {
-            if (!temperatureChart) return;
-
-            temperatureChart.config.type = currentChartType;
-            temperatureChart.data.datasets[0].data = chartDataPoints || [];
-            temperatureChart.data.datasets[0].label = `Temperature (°${currentUnit})`;
-            temperatureChart.data.datasets[0].spanGaps = !breakGaps;
-
-            // Tight X-Axis bounds fitting to prevent timeline from extending past latest data into future
-            if (chartDataPoints && chartDataPoints.length > 0) {
-                const validPoints = chartDataPoints.filter(p => p.y !== null && p.x !== null && !isNaN(p.x));
-                if (validPoints.length > 0) {
-                    const minTime = validPoints[0].x;
-                    const maxTime = validPoints[validPoints.length - 1].x;
-                    
-                    if (currentTimeRange !== 'ALL') {
-                        let rangeMs = 60 * 60 * 1000;
-                        if (currentTimeRange === '24H') rangeMs = 24 * 60 * 60 * 1000;
-                        if (currentTimeRange === '7D') rangeMs = 7 * 24 * 60 * 60 * 1000;
-                        
-                        temperatureChart.options.scales.x.min = maxTime - rangeMs;
-                        temperatureChart.options.scales.x.max = maxTime;
-                    } else {
-                        temperatureChart.options.scales.x.min = minTime;
-                        temperatureChart.options.scales.x.max = maxTime;
-                    }
-                }
-            } else {
-                delete temperatureChart.options.scales.x.min;
-                delete temperatureChart.options.scales.x.max;
-            }
-
-            // Apply custom or auto Y-Axis scaling
-            if (isAutoScale) {
-                delete temperatureChart.options.scales.y.min;
-                delete temperatureChart.options.scales.y.max;
-            } else {
-                const minVal = currentUnit === 'F' ? (scaleMin * 9/5) + 32 : scaleMin;
-                const maxVal = currentUnit === 'F' ? (scaleMax * 9/5) + 32 : scaleMax;
-                temperatureChart.options.scales.y.min = minVal;
-                temperatureChart.options.scales.y.max = maxVal;
-            }
-
-            // Apply clean, elegant chart fill styling
-            if (currentChartType === 'bar') {
-                temperatureChart.data.datasets[0].backgroundColor = function(context) {
-                    const raw = context ? context.raw : null;
-                    const val = raw && typeof raw === 'object' ? raw.y : raw;
-                    if (val === null || val === undefined) return 'transparent';
-                    return getTempColor(val, 0.85);
-                };
-            } else {
-                const ctx = temperatureChart.ctx;
-                const chartArea = temperatureChart.chartArea;
-
-                if (chartArea) {
-                    // Multi-stop thermal zonal gradient fill matching temperature thresholds
-                    const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
-                    gradient.addColorStop(0.00, 'rgba(245, 158, 11, 0.35)');  // Top / High Temp: Warm Amber Glow
-                    gradient.addColorStop(0.38, 'rgba(16, 185, 129, 0.22)');  // Mid / Normal Temp: Emerald Green
-                    gradient.addColorStop(0.72, 'rgba(6, 182, 212, 0.14)');   // Low / Cool Temp: Cyan Tint
-                    gradient.addColorStop(1.00, 'rgba(11, 15, 25, 0.00)');    // Base: Fades smoothly into background
-                    temperatureChart.data.datasets[0].backgroundColor = gradient;
-                } else {
-                    temperatureChart.data.datasets[0].backgroundColor = 'rgba(16, 185, 129, 0.15)';
-                }
-            }
-
-            temperatureChart.update();
-        }
-
-        function filterDataByTimeRange(data, range) {
-            if (range === 'ALL' || !data || data.length === 0) return data;
-            
-            const timestamps = data.map(item => new Date(item[config.timeColumn]).getTime()).filter(t => !isNaN(t));
-            if (timestamps.length === 0) return data;
-            
-            const latestTime = Math.max(...timestamps);
-            const refTime = Math.max(Date.now(), latestTime);
-
-            let cutoffMs = 0;
-            if (range === '1H') cutoffMs = 60 * 60 * 1000;
-            else if (range === '24H') cutoffMs = 24 * 60 * 60 * 1000;
-            else if (range === '7D') cutoffMs = 7 * 24 * 60 * 60 * 1000;
-
-            return data.filter(item => {
-                const itemTime = new Date(item[config.timeColumn]).getTime();
-                return (refTime - itemTime) <= cutoffMs;
-            });
-        }
-
-        function renderTable(dataList) {
-            const tbody = document.getElementById('logsTableBody');
-            const searchInput = document.getElementById('searchInput');
-            const searchVal = searchInput ? searchInput.value.toLowerCase().trim() : '';
-
-            if (!tbody) return;
-
-            if (!dataList || dataList.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-6 text-slate-500">No log records found</td></tr>`;
-                const countInfo = document.getElementById('tableCountInfo');
-                if (countInfo) countInfo.innerText = 'Showing 0 logs';
-                return;
-            }
-
-            let rows = [...dataList].reverse(); // Most recent first for table view
-
-            if (searchVal) {
-                rows = rows.filter(r => {
-                    const temp = String(r[config.tempColumn] || '');
-                    const time = String(r[config.timeColumn] || '');
-                    const id = String(r.id || '');
-                    return temp.includes(searchVal) || time.toLowerCase().includes(searchVal) || id.includes(searchVal);
+                const displayTemp = currentUnit === 'F' ? (pt.tempC * 9/5 + 32) : pt.tempC;
+                chartPoints.push({
+                    x: pt.timestamp,
+                    y: Math.round(displayTemp * 100) / 100,
+                    rawTempC: pt.tempC,
+                    isAveraged: pt.isAveraged,
+                    sampleCount: pt.sampleCount
                 });
             }
 
-            const countInfo = document.getElementById('tableCountInfo');
-            if (countInfo) {
-                const totalMatching = rows.length;
-                const totalLoaded = dataList.length;
-                countInfo.innerText = totalMatching > 100 
-                    ? `Showing latest 100 of ${totalMatching} matching records (${totalLoaded} total loaded)`
-                    : `Showing ${totalMatching} of ${totalLoaded} total records`;
+            chartInstance.config.type = chartType;
+            chartInstance.data.datasets[0].data = chartPoints;
+
+            // Bar chart specific styling
+            if (chartType === 'bar') {
+                chartInstance.data.datasets[0].backgroundColor = chartPoints.map(p => p.rawTempC !== null ? getThermalColor(p.rawTempC) : 'transparent');
             }
 
-            if (rows.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="4" class="text-center py-6 text-slate-500">No matching log records found</td></tr>`;
-                return;
+            // Configure X axis max lock to eliminate trailing future gaps
+            if (data.length > 0) {
+                const minTime = data[0].timestamp;
+                const maxTime = data[data.length - 1].timestamp;
+                chartInstance.options.scales.x.min = minTime;
+                chartInstance.options.scales.x.max = maxTime;
+            } else {
+                delete chartInstance.options.scales.x.min;
+                delete chartInstance.options.scales.x.max;
             }
 
-            // Slice top 100 most recent records for smooth UI DOM rendering
-            const displayRows = rows.slice(0, 100);
+            // Configure Y scale bounds
+            if (yScaleAuto) {
+                delete chartInstance.options.scales.y.min;
+                delete chartInstance.options.scales.y.max;
+            } else {
+                const minBound = currentUnit === 'F' ? (yScaleMin * 9/5 + 32) : yScaleMin;
+                const maxBound = currentUnit === 'F' ? (yScaleMax * 9/5 + 32) : yScaleMax;
+                chartInstance.options.scales.y.min = Math.round(minBound);
+                chartInstance.options.scales.y.max = Math.round(maxBound);
+            }
 
-            tbody.innerHTML = displayRows.map(item => {
-                const idVal = item.id !== undefined ? item.id : '-';
-                const rawTemp = Number(item[config.tempColumn]) || 0;
-                const converted = convertTemp(rawTemp).toFixed(1);
-                const dateStr = formatTime(item[config.timeColumn]);
-                
-                // Status badge
-                let statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Normal</span>';
-                if (rawTemp > 28) {
-                    statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] bg-amber-500/10 text-amber-400 border border-amber-500/20">Warm</span>';
-                } else if (rawTemp < 15) {
-                    statusBadge = '<span class="px-2 py-0.5 rounded text-[10px] bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">Cool</span>';
-                }
-
-                return `
-                    <tr class="hover:bg-slate-900/50 transition-colors">
-                        <td class="py-2.5 px-3 text-slate-400 font-mono text-[11px]">${idVal}</td>
-                        <td class="py-2.5 px-3 text-slate-300">${dateStr}</td>
-                        <td class="py-2.5 px-3 text-right font-bold text-white">${converted}°${currentUnit}</td>
-                        <td class="py-2.5 px-3 text-center">${statusBadge}</td>
-                    </tr>
-                `;
-            }).join('');
+            chartInstance.update();
         }
 
-        function convertTemp(celsius) {
-            return currentUnit === 'F' ? (celsius * 9/5) + 32 : celsius;
-        }
+        function updateKPIs(data) {
+            if (!data || data.length === 0) return;
 
-        function formatTime(isoString) {
-            if (!isoString) return 'N/A';
-            const d = new Date(isoString);
-            if (isNaN(d.getTime())) return String(isoString);
-            return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        }
+            const latest = data[data.length - 1];
+            const temps = data.map(d => d.tempC);
+            const sum = temps.reduce((a, b) => a + b, 0);
+            const avg = sum / temps.length;
+            const max = Math.max(...temps);
+            const min = Math.min(...temps);
 
-        function formatChartLabel(isoString) {
-            if (!isoString) return '';
-            const d = new Date(isoString);
-            if (isNaN(d.getTime())) return '';
-            return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            const displayLatest = currentUnit === 'F' ? (latest.tempC * 9/5 + 32) : latest.tempC;
+            const displayAvg = currentUnit === 'F' ? (avg * 9/5 + 32) : avg;
+            const displayMax = currentUnit === 'F' ? (max * 9/5 + 32) : max;
+            const displayMin = currentUnit === 'F' ? (min * 9/5 + 32) : min;
+
+            document.getElementById('statCurrent').innerText = displayLatest.toFixed(1);
+            document.getElementById('statAvg').innerText = displayAvg.toFixed(1);
+            document.getElementById('statMax').innerText = displayMax.toFixed(1);
+            document.getElementById('statMin').innerText = displayMin.toFixed(1);
+            document.getElementById('statCount').innerText = data.length.toLocaleString();
+
+            const dateStr = new Date(latest.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            document.getElementById('statCurrentTime').innerText = dateStr;
+
+            // Unit Labels
+            const unitText = `°${currentUnit}`;
+            document.getElementById('unitStatCurrent').innerText = unitText;
+            document.getElementById('unitStatAvg').innerText = unitText;
+            document.getElementById('unitStatMax').innerText = unitText;
+            document.getElementById('unitStatMin').innerText = unitText;
         }
 
         function resetKPICards() {
@@ -1173,417 +917,345 @@
             document.getElementById('statMax').innerText = '--';
             document.getElementById('statMin').innerText = '--';
             document.getElementById('statCount').innerText = '0';
-            document.getElementById('statTimestamp').innerText = 'No records';
+            document.getElementById('statCurrentTime').innerText = '--';
+            updateMaxLimitUI(false);
         }
 
-        function updateStatus(state, text) {
-            const statusDot = document.getElementById('statusDot');
-            const statusPing = document.getElementById('statusPing');
-            const statusText = document.getElementById('statusText');
+        function updateMaxLimitUI(isMaxCapReached) {
+            const badge = document.getElementById('maxLimitBadge');
+            const warningText = document.getElementById('tableMaxWarning');
+            if (badge) {
+                if (isMaxCapReached) badge.classList.remove('hidden');
+                else badge.classList.add('hidden');
+            }
+            if (warningText) {
+                if (isMaxCapReached) warningText.classList.remove('hidden');
+                else warningText.classList.add('hidden');
+            }
+        }
 
-            statusText.innerText = text;
+        function renderTable(dataList = rawLogsData) {
+            const tbody = document.getElementById('logsTableBody');
+            const searchVal = (document.getElementById('searchInput').value || '').toLowerCase();
+            const countInfo = document.getElementById('tableCountInfo');
 
-            if (state === 'online') {
-                statusDot.className = 'w-2 h-2 rounded-full bg-emerald-400';
-                statusPing.className = 'w-2 h-2 rounded-full bg-emerald-400 animate-ping';
-            } else if (state === 'error') {
-                statusDot.className = 'w-2 h-2 rounded-full bg-red-500';
-                statusPing.className = 'hidden';
+            if (!dataList || dataList.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="py-8 text-center text-slate-500">No telemetry logs available.</td></tr>`;
+                countInfo.innerText = 'Showing 0 logs';
+                return;
+            }
+
+            // Reverse for table display (newest first)
+            let rows = [...dataList].reverse();
+
+            if (searchVal) {
+                rows = rows.filter(r => {
+                    const temp = String(r[config.tempColumn]);
+                    const time = new Date(r[config.timeColumn]).toLocaleString().toLowerCase();
+                    return temp.includes(searchVal) || time.includes(searchVal);
+                });
+            }
+
+            // Limit table rows to 100 for DOM performance
+            const displayRows = rows.slice(0, 100);
+            countInfo.innerText = `Showing ${displayRows.length} of ${rows.length} logs`;
+
+            tbody.innerHTML = displayRows.map((item, idx) => {
+                const tempC = parseFloat(item[config.tempColumn]);
+                const displayTemp = currentUnit === 'F' ? (tempC * 9/5 + 32) : tempC;
+                const color = getThermalColor(tempC);
+                const timeStr = item[config.timeColumn] ? new Date(item[config.timeColumn]).toLocaleString() : 'N/A';
+                
+                let badgeClass = 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
+                let statusLabel = 'Normal';
+                if (tempC >= 28) {
+                    badgeClass = 'bg-amber-500/10 text-amber-400 border-amber-500/20';
+                    statusLabel = 'Warm';
+                } else if (tempC <= 15) {
+                    badgeClass = 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20';
+                    statusLabel = 'Cool';
+                }
+
+                return `
+                    <tr class="hover:bg-slate-900/60 transition">
+                        <td class="py-2.5 px-4 text-slate-500 text-[11px]">${rows.length - idx}</td>
+                        <td class="py-2.5 px-4 font-sans text-slate-200">${timeStr}</td>
+                        <td class="py-2.5 px-4 font-bold text-white">
+                            <span style="color: ${color}">${displayTemp.toFixed(1)}°${currentUnit}</span>
+                        </td>
+                        <td class="py-2.5 px-4">
+                            <span class="inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border ${badgeClass}">
+                                ${statusLabel}
+                            </span>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        function toggleUnit() {
+            currentUnit = currentUnit === 'C' ? 'F' : 'C';
+            document.getElementById('unitToggleText').innerText = currentUnit === 'C' ? '°C / °F' : '°F / °C';
+            processAndUpdateDashboard();
+        }
+
+        function setTimeRange(range) {
+            timeRange = range;
+            ['1H', '24H', '7D', 'ALL'].forEach(r => {
+                const btn = document.getElementById(`rangeBtn${r}`);
+                if (r === range) {
+                    btn.className = "px-2.5 py-1 rounded-md font-medium bg-blue-600 text-white shadow-sm transition";
+                } else {
+                    btn.className = "px-2.5 py-1 rounded-md font-medium text-slate-400 hover:text-white transition";
+                }
+            });
+            processAndUpdateDashboard();
+        }
+
+        function toggleChartType() {
+            chartType = chartType === 'line' ? 'bar' : 'line';
+            processAndUpdateDashboard();
+        }
+
+        function cycleDownsampleSetting() {
+            const sequence = ['auto', 'off', '5', '10', '25', '50'];
+            const idx = sequence.indexOf(downsampleSetting);
+            downsampleSetting = sequence[(idx + 1) % sequence.length];
+            
+            const btnText = document.getElementById('smoothText');
+            btnText.innerText = `Smooth: ${downsampleSetting.toUpperCase()}`;
+            processAndUpdateDashboard();
+        }
+
+        function cycleGapBreakSetting() {
+            const sequence = [60, 180, 30, 0];
+            const idx = sequence.indexOf(gapBreakMinutes);
+            gapBreakMinutes = sequence[(idx + 1) % sequence.length];
+
+            const btnText = document.getElementById('gapText');
+            btnText.innerText = gapBreakMinutes === 0 ? 'Gaps: Off' : `Gaps: ${gapBreakMinutes >= 60 ? gapBreakMinutes/60 + 'h' : gapBreakMinutes + 'm'}`;
+            processAndUpdateDashboard();
+        }
+
+        function updateScaleFromInputs() {
+            const minVal = parseFloat(document.getElementById('scaleMinInput').value);
+            const maxVal = parseFloat(document.getElementById('scaleMaxInput').value);
+            
+            if (!isNaN(minVal) && !isNaN(maxVal) && minVal < maxVal) {
+                yScaleMin = currentUnit === 'F' ? (minVal - 32) * 5/9 : minVal;
+                yScaleMax = currentUnit === 'F' ? (maxVal - 32) * 5/9 : maxVal;
+                yScaleAuto = false;
+                document.getElementById('scaleAutoBtn').className = "px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-400";
+                processAndUpdateDashboard();
+            }
+        }
+
+        function toggleAutoScale() {
+            yScaleAuto = !yScaleAuto;
+            const autoBtn = document.getElementById('scaleAutoBtn');
+            if (yScaleAuto) {
+                autoBtn.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-blue-600 text-white";
             } else {
-                statusDot.className = 'w-2 h-2 rounded-full bg-amber-400';
-                statusPing.className = 'w-2 h-2 rounded-full bg-amber-400 animate-ping';
+                autoBtn.className = "px-2 py-0.5 rounded text-[10px] font-bold bg-slate-800 hover:bg-slate-700 text-slate-400";
+            }
+            processAndUpdateDashboard();
+        }
+
+        function exportCSV() {
+            if (!rawLogsData || rawLogsData.length === 0) {
+                showToast('No data available to export', 'error');
+                return;
+            }
+
+            let csvContent = "data:text/csv;charset=utf-8,ID,Timestamp,Temperature_C,Temperature_F\n";
+            rawLogsData.forEach((row, index) => {
+                const tempC = parseFloat(row[config.tempColumn]) || 0;
+                const tempF = (tempC * 9/5 + 32).toFixed(2);
+                const timeStr = row[config.timeColumn] || '';
+                csvContent += `${index + 1},"${timeStr}",${tempC},${tempF}\n`;
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `telemetry_export_${Date.now()}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast('CSV Exported successfully', 'success');
+        }
+
+        async function seedSampleData() {
+            if (!supabaseClient) return;
+            showToast('Generating 20 sample readings...', 'info');
+
+            const now = Date.now();
+            const samples = [];
+            let temp = 22.0;
+
+            for (let i = 19; i >= 0; i--) {
+                const time = new Date(now - i * 5 * 60 * 1000).toISOString();
+                temp += (Math.random() - 0.48) * 1.5;
+                temp = Math.max(10, Math.min(38, temp));
+
+                const record = {};
+                record[config.tempColumn] = parseFloat(temp.toFixed(1));
+                record[config.timeColumn] = time;
+                samples.push(record);
+            }
+
+            try {
+                const { error } = await supabaseClient.from(config.tableName).insert(samples);
+                if (error) {
+                    showToast(`Seed failed: ${error.message}`, 'error');
+                } else {
+                    showToast('20 Sample entries inserted!', 'success');
+                    fetchLogs();
+                }
+            } catch (err) {
+                showToast(`Error seeding data: ${err.message}`, 'error');
+            }
+        }
+
+        async function handleManualLogSubmit(e) {
+            e.preventDefault();
+            const val = parseFloat(document.getElementById('manualTempInput').value);
+            const customTime = document.getElementById('manualTimeInput').value;
+
+            if (isNaN(val)) {
+                showToast('Please enter a valid temperature', 'error');
+                return;
+            }
+
+            const record = {};
+            record[config.tempColumn] = val;
+            record[config.timeColumn] = customTime ? new Date(customTime).toISOString() : new Date().toISOString();
+
+            try {
+                const { error } = await supabaseClient.from(config.tableName).insert([record]);
+                if (error) {
+                    showToast(`Failed to log reading: ${error.message}`, 'error');
+                } else {
+                    showToast(`Logged ${val}°C successfully!`, 'success');
+                    closeModal('addLogModal');
+                    document.getElementById('addLogForm').reset();
+                    fetchLogs();
+                }
+            } catch (err) {
+                showToast(`Network error: ${err.message}`, 'error');
+            }
+        }
+
+        function handleSettingsSubmit(e) {
+            e.preventDefault();
+            config.url = document.getElementById('cfgUrl').value.trim();
+            config.key = document.getElementById('cfgKey').value.trim();
+            config.tableName = document.getElementById('cfgTable').value.trim();
+            config.tempColumn = document.getElementById('cfgTempCol').value.trim();
+            config.timeColumn = document.getElementById('cfgTimeCol').value.trim();
+
+            closeModal('settingsModal');
+            showToast('Settings saved. Reconnecting...', 'info');
+            initSupabase();
+            fetchLogs();
+        }
+
+        function openModal(id) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.classList.remove('hidden');
+                el.classList.add('flex');
+            }
+        }
+
+        function closeModal(id) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.classList.add('hidden');
+                el.classList.remove('flex');
             }
         }
 
         function showChartLoader(show) {
             const loader = document.getElementById('chartLoader');
-            if (show) {
-                loader.classList.remove('opacity-0', 'pointer-events-none');
-            } else {
-                loader.classList.add('opacity-0', 'pointer-events-none');
+            if (loader) {
+                if (show) loader.classList.remove('hidden');
+                else loader.classList.add('hidden');
             }
         }
 
         function setRefreshSpinning(spinning) {
             const icon = document.getElementById('refreshIcon');
-            if (spinning) icon.classList.add('animate-spin');
-            else icon.classList.remove('animate-spin');
+            if (icon) {
+                if (spinning) icon.classList.add('animate-spin');
+                else icon.classList.remove('animate-spin');
+            }
+        }
+
+        function updateStatus(state, text) {
+            const dot = document.getElementById('connStatusDot');
+            const txt = document.getElementById('connStatusText');
+            if (!dot || !txt) return;
+
+            txt.innerText = text;
+            if (state === 'online') {
+                dot.className = "w-2 h-2 rounded-full bg-emerald-400";
+            } else if (state === 'error') {
+                dot.className = "w-2 h-2 rounded-full bg-rose-500";
+            } else {
+                dot.className = "w-2 h-2 rounded-full bg-amber-400 animate-pulse";
+            }
         }
 
         function logStreamMessage(msg) {
-            const feed = document.getElementById('streamFeed');
+            const stream = document.getElementById('streamLog');
+            if (!stream) return;
             const time = new Date().toLocaleTimeString();
-            const entry = document.createElement('div');
-            entry.className = 'border-b border-slate-900 pb-1 text-slate-300';
-            entry.innerHTML = `<span class="text-slate-500">[${time}]</span> ${msg}`;
-            feed.prepend(entry);
+            const div = document.createElement('div');
+            div.innerText = `[${time}] ${msg}`;
+            stream.appendChild(div);
+            stream.scrollTop = stream.scrollHeight;
         }
 
-        function showToast(message, type = 'info') {
-            const toastContainer = document.getElementById('toastContainer');
+        function showToast(msg, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            if (!container) return;
+
             const toast = document.createElement('div');
-            
-            let bgClass = 'bg-slate-800 border-slate-700 text-slate-200';
-            let icon = 'info';
+            let bg = 'bg-slate-800 border-slate-700 text-slate-200';
+            if (type === 'success') bg = 'bg-emerald-900/90 border-emerald-700 text-emerald-100';
+            if (type === 'error') bg = 'bg-rose-900/90 border-rose-700 text-rose-100';
 
-            if (type === 'success') {
-                bgClass = 'bg-emerald-950 border-emerald-800 text-emerald-200';
-                icon = 'check-circle-2';
-            } else if (type === 'error') {
-                bgClass = 'bg-red-950 border-red-800 text-red-200';
-                icon = 'alert-triangle';
-            }
+            toast.className = `pointer-events-auto flex items-center px-4 py-3 rounded-xl border ${bg} shadow-2xl text-xs font-semibold backdrop-blur transition-all duration-300 transform translate-y-2 opacity-0`;
+            toast.innerText = msg;
 
-            toast.className = `pointer-events-auto flex items-center justify-between p-3.5 rounded-xl border ${bgClass} shadow-xl text-xs transition-all duration-300 transform translate-y-2 opacity-0`;
-            toast.innerHTML = `
-                <div class="flex items-center space-x-2">
-                    <i data-lucide="${icon}" class="w-4 h-4 shrink-0"></i>
-                    <span>${message}</span>
-                </div>
-            `;
-
-            toastContainer.appendChild(toast);
-            lucide.createIcons();
-
+            container.appendChild(toast);
             setTimeout(() => {
                 toast.classList.remove('translate-y-2', 'opacity-0');
             }, 10);
 
             setTimeout(() => {
-                toast.classList.add('opacity-0', 'translate-y-2');
+                toast.classList.add('opacity-0');
                 setTimeout(() => toast.remove(), 300);
             }, 4000);
         }
 
-        async function handleAddLogSubmit(e) {
-            e.preventDefault();
-            const valInput = document.getElementById('inputTempValue');
-            const timeInput = document.getElementById('inputTimestamp');
-            const submitBtn = document.getElementById('submitLogBtn');
-
-            const numVal = parseFloat(valInput.value);
-            if (isNaN(numVal)) {
-                showToast('Please enter a valid numeric temperature value.', 'error');
-                return;
-            }
-
-            const payload = {};
-            payload[config.tempColumn] = numVal;
-
-            if (timeInput.value) {
-                payload[config.timeColumn] = new Date(timeInput.value).toISOString();
-            } else {
-                payload[config.timeColumn] = new Date().toISOString();
-            }
-
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = `<div class="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div> Sending...`;
-
-            try {
-                const { data, error } = await supabaseClient
-                    .from(config.tableName)
-                    .insert([payload])
-                    .select();
-
-                if (error) {
-                    showToast(`Insert failed: ${error.message}`, 'error');
-                } else {
-                    showToast(`Temperature log recorded successfully!`, 'success');
-                    document.getElementById('addModal').classList.add('hidden');
-                    valInput.value = '';
-                    timeInput.value = '';
-                    fetchLogs();
-                }
-            } catch (err) {
-                showToast(`Error inserting record: ${err.message}`, 'error');
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = `<i data-lucide="send" class="w-3.5 h-3.5"></i> Submit Log`;
-                lucide.createIcons();
-            }
-        }
-
-        async function seedSampleData() {
-            if (!confirm('This will insert 12 simulated temperature readings into table "' + config.tableName + '". Proceed?')) return;
-
-            showChartLoader(true);
-            const now = Date.now();
-            const hourMs = 3600 * 1000;
-            const mockRecords = [];
-            let baseTemp = 21.5;
-
-            for (let i = 12; i >= 0; i--) {
-                const recordTime = new Date(now - i * hourMs).toISOString();
-                baseTemp += (Math.random() - 0.48) * 1.5;
-                const roundedTemp = Math.round(baseTemp * 10) / 10;
-                
-                const rec = {};
-                rec[config.tempColumn] = roundedTemp;
-                rec[config.timeColumn] = recordTime;
-                mockRecords.push(rec);
-            }
-
-            try {
-                const { data, error } = await supabaseClient
-                    .from(config.tableName)
-                    .insert(mockRecords);
-
-                if (error) {
-                    showToast(`Failed to seed data: ${error.message}`, 'error');
-                } else {
-                    showToast(`Successfully inserted 13 sample records!`, 'success');
-                    fetchLogs();
-                }
-            } catch (err) {
-                showToast(`Error seeding data: ${err.message}`, 'error');
-            } finally {
-                showChartLoader(false);
-            }
-        }
-
-        function updateScaleControlsUI() {
-            const autoBtn = document.getElementById('btnAutoScale');
-            const minInput = document.getElementById('inputScaleMin');
-            const maxInput = document.getElementById('inputScaleMax');
-            const unitLabel = document.getElementById('scaleUnitLabel');
-
-            if (!autoBtn || !minInput || !maxInput || !unitLabel) return;
-
-            unitLabel.innerText = `°${currentUnit}`;
-
-            if (isAutoScale) {
-                autoBtn.classList.add('bg-emerald-600', 'text-white', 'font-medium');
-                autoBtn.classList.remove('text-slate-400');
-                minInput.disabled = true;
-                maxInput.disabled = true;
-                minInput.classList.add('opacity-40', 'cursor-not-allowed');
-                maxInput.classList.add('opacity-40', 'cursor-not-allowed');
-            } else {
-                autoBtn.classList.remove('bg-emerald-600', 'text-white', 'font-medium');
-                autoBtn.classList.add('text-slate-400');
-                minInput.disabled = false;
-                maxInput.disabled = false;
-                minInput.classList.remove('opacity-40', 'cursor-not-allowed');
-                maxInput.classList.remove('opacity-40', 'cursor-not-allowed');
-
-                const displayMin = currentUnit === 'F' ? Math.round((scaleMin * 9/5) + 32) : scaleMin;
-                const displayMax = currentUnit === 'F' ? Math.round((scaleMax * 9/5) + 32) : scaleMax;
-                minInput.value = displayMin;
-                maxInput.value = displayMax;
-            }
-        }
-
-        function exportCSV() {
-            if (!filteredLogsData || filteredLogsData.length === 0) {
-                showToast('No log data available to export.', 'error');
-                return;
-            }
-            const headers = ['ID', 'Timestamp', `Temperature (°${currentUnit})`];
-            const rows = filteredLogsData.map(item => [
-                item.id !== undefined ? item.id : '',
-                `"${item[config.timeColumn] || ''}"`,
-                convertTemp(Number(item[config.tempColumn]) || 0).toFixed(1)
-            ]);
+        window.addEventListener('DOMContentLoaded', () => {
+            lucide.createIcons();
             
-            const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.setAttribute('href', url);
-            link.setAttribute('download', `temperature_logs_${new Date().toISOString().slice(0,10)}.csv`);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            showToast('Exported temperature logs CSV!', 'success');
-        }
+            // Prefill config inputs
+            document.getElementById('cfgUrl').value = config.url;
+            document.getElementById('cfgKey').value = config.key;
+            document.getElementById('cfgTable').value = config.tableName;
+            document.getElementById('cfgTempCol').value = config.tempColumn;
+            document.getElementById('cfgTimeCol').value = config.timeColumn;
 
-        function bindEvents() {
-            // Unit Toggle
-            document.getElementById('unitToggleBtn').addEventListener('click', () => {
-                currentUnit = currentUnit === 'C' ? 'F' : 'C';
-                document.getElementById('unitText').innerText = `°${currentUnit}`;
-                document.querySelectorAll('#unitStatCurrent, #unitStatAvg, #unitStatMax, #unitStatMin').forEach(el => el.innerText = `°${currentUnit}`);
-                updateScaleControlsUI();
-                processAndUpdateDashboard();
-            });
-
-            // Scale Controls Events
-            document.getElementById('btnAutoScale').addEventListener('click', () => {
-                isAutoScale = !isAutoScale;
-                updateScaleControlsUI();
-                processAndUpdateDashboard();
-            });
-
-            const handleScaleInputChange = () => {
-                const minVal = parseFloat(document.getElementById('inputScaleMin').value);
-                const maxVal = parseFloat(document.getElementById('inputScaleMax').value);
-
-                if (!isNaN(minVal) && !isNaN(maxVal) && maxVal > minVal) {
-                    if (currentUnit === 'F') {
-                        scaleMin = (minVal - 32) * 5/9;
-                        scaleMax = (maxVal - 32) * 5/9;
-                    } else {
-                        scaleMin = minVal;
-                        scaleMax = maxVal;
-                    }
-                    isAutoScale = false;
-                    updateScaleControlsUI();
-                    processAndUpdateDashboard();
-                }
-            };
-
-            document.getElementById('inputScaleMin').addEventListener('change', handleScaleInputChange);
-            document.getElementById('inputScaleMax').addEventListener('change', handleScaleInputChange);
-
-            // Manual Refresh
-            document.getElementById('refreshBtn').addEventListener('click', () => fetchLogs());
-
-            // Add Modal Trigger
-            document.getElementById('openAddModalBtn').addEventListener('click', () => {
-                document.getElementById('addModal').classList.remove('hidden');
-            });
-            document.getElementById('closeAddModalBtn').addEventListener('click', () => {
-                document.getElementById('addModal').classList.add('hidden');
-            });
-            document.getElementById('cancelAddBtn').addEventListener('click', () => {
-                document.getElementById('addModal').classList.add('hidden');
-            });
-            document.getElementById('addLogForm').addEventListener('submit', handleAddLogSubmit);
-
-            // Settings Modal Trigger
-            document.getElementById('openSettingsModalBtn').addEventListener('click', () => {
-                document.getElementById('settingsModal').classList.remove('hidden');
-            });
-            document.getElementById('closeSettingsModalBtn').addEventListener('click', () => {
-                document.getElementById('settingsModal').classList.add('hidden');
-            });
-            document.getElementById('cancelSettingsBtn').addEventListener('click', () => {
-                document.getElementById('settingsModal').classList.add('hidden');
-            });
-
-            // Save Settings
-            document.getElementById('settingsForm').addEventListener('submit', (e) => {
-                e.preventDefault();
-                config.url = document.getElementById('cfgUrl').value.trim();
-                config.key = document.getElementById('cfgKey').value.trim();
-                config.tableName = document.getElementById('cfgTable').value.trim();
-                config.tempColumn = document.getElementById('cfgTempCol').value.trim();
-                config.timeColumn = document.getElementById('cfgTimeCol').value.trim();
-
-                localStorage.setItem('supa_temp_cfg', JSON.stringify(config));
-                document.getElementById('settingsModal').classList.add('hidden');
-                showToast('Settings saved. Reconnecting...', 'success');
-                initSupabase();
-            });
-
-            // Reset Default Settings
-            document.getElementById('resetConfigBtn').addEventListener('click', () => {
-                config = { ...DEFAULT_CONFIG };
-                localStorage.removeItem('supa_temp_cfg');
-                updateUIConfigText();
-                showToast('Reset to default credentials', 'info');
-            });
-
-            // Chart Range Buttons
-            document.querySelectorAll('.range-btn').forEach(btn => {
-                btn.addEventListener('click', (e) => {
-                    document.querySelectorAll('.range-btn').forEach(b => {
-                        b.classList.remove('bg-emerald-600', 'text-white', 'font-medium');
-                        b.classList.add('text-slate-400');
-                    });
-                    e.target.classList.add('bg-emerald-600', 'text-white', 'font-medium');
-                    e.target.classList.remove('text-slate-400');
-                    
-                    currentTimeRange = e.target.getAttribute('data-range');
-                    processAndUpdateDashboard();
-                });
-            });
-
-            // Chart Type Buttons
-            document.getElementById('btnChartLine').addEventListener('click', () => {
-                currentChartType = 'line';
-                document.getElementById('btnChartLine').classList.add('bg-slate-800', 'text-emerald-400');
-                document.getElementById('btnChartBar').classList.remove('bg-slate-800', 'text-emerald-400');
-                processAndUpdateDashboard();
-            });
-            document.getElementById('btnChartBar').addEventListener('click', () => {
-                currentChartType = 'bar';
-                document.getElementById('btnChartBar').classList.add('bg-slate-800', 'text-emerald-400');
-                document.getElementById('btnChartLine').classList.remove('bg-slate-800', 'text-emerald-400');
-                processAndUpdateDashboard();
-            });
-
-            // Gap Break Toggle Button
-            document.getElementById('btnGapToggle').addEventListener('click', () => {
-                if (gapThresholdMinutes === 30) {
-                    gapThresholdMinutes = 60;
-                    breakGaps = true;
-                } else if (gapThresholdMinutes === 60) {
-                    gapThresholdMinutes = 180;
-                    breakGaps = true;
-                } else if (gapThresholdMinutes === 180) {
-                    gapThresholdMinutes = 0;
-                    breakGaps = false;
-                } else {
-                    gapThresholdMinutes = 30;
-                    breakGaps = true;
-                }
-
-                const label = document.getElementById('gapThresholdLabel');
-                if (label) {
-                    if (!breakGaps || gapThresholdMinutes === 0) {
-                        label.innerText = 'Off';
-                        label.className = 'text-slate-500';
-                    } else if (gapThresholdMinutes >= 60) {
-                        label.innerText = (gapThresholdMinutes / 60) + 'h';
-                        label.className = 'text-emerald-400';
-                    } else {
-                        label.innerText = gapThresholdMinutes + 'm';
-                        label.className = 'text-emerald-400';
-                    }
-                }
-                processAndUpdateDashboard();
-            });
-
-            // Downsample / Smoothing Toggle Button
-            document.getElementById('btnDownsampleToggle').addEventListener('click', () => {
-                const options = ['auto', 'off', 5, 10, 25, 50];
-                const currentIndex = options.indexOf(downsampleSetting);
-                downsampleSetting = options[(currentIndex + 1) % options.length];
-
-                const label = document.getElementById('downsampleLabel');
-                if (label) {
-                    if (downsampleSetting === 'off') {
-                        label.innerText = 'Off (Raw)';
-                        label.className = 'text-slate-500';
-                    } else if (downsampleSetting === 'auto') {
-                        label.innerText = 'Auto';
-                        label.className = 'text-emerald-400';
-                    } else {
-                        label.innerText = `Avg ${downsampleSetting}`;
-                        label.className = 'text-emerald-400';
-                    }
-                }
-                processAndUpdateDashboard();
-            });
-
-            // Seed Mock Data
-            document.getElementById('seedDataBtn').addEventListener('click', seedSampleData);
-            document.getElementById('emptySeedBtn').addEventListener('click', seedSampleData);
-
-            // Table Search Input
-            document.getElementById('searchInput').addEventListener('input', () => renderTable(filteredLogsData));
-
-            // Export CSV Button
-            document.getElementById('exportCsvBtn').addEventListener('click', exportCSV);
-        }
-
-        window.onload = function() {
-            initChart();
-            bindEvents();
-            updateScaleControlsUI();
+            // Initialize app
             initSupabase();
-        };
+            initChart();
+            fetchLogs();
+            setupRealtimeSubscription();
+        });
     </script>
 </body>
 </html>
